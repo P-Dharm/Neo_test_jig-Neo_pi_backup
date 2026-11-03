@@ -1,0 +1,997 @@
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.5162 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 139807
+  Raw ADC Voltage : 1276.509 mV
+  Drop Across Rs  : 5.1619 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.5133 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 139089
+  Raw ADC Voltage : 1269.945 mV
+  Drop Across Rs  : 5.1327 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.5136 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 139167
+  Raw ADC Voltage : 1270.659 mV
+  Drop Across Rs  : 5.1359 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.3678 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 103329
+  Raw ADC Voltage : 943.441 mV
+  Drop Across Rs  : 3.6782 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.3705 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 103996
+  Raw ADC Voltage : 949.536 mV
+  Drop Across Rs  : 3.7053 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.0004 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 12995
+  Raw ADC Voltage : 118.649 mV
+  Drop Across Rs  : 0.0039 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.0002 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 12945
+  Raw ADC Voltage : 118.197 mV
+  Drop Across Rs  : 0.0019 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.3711 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 104130
+  Raw ADC Voltage : 950.756 mV
+  Drop Across Rs  : 3.7108 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.0958 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 36464
+  Raw ADC Voltage : 332.938 mV
+  Drop Across Rs  : 0.9585 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.0957 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 36417
+  Raw ADC Voltage : 332.502 mV
+  Drop Across Rs  : 0.9565 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.0956 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 36404
+  Raw ADC Voltage : 332.384 mV
+  Drop Across Rs  : 0.9560 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.45 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.45 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.0911 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 35297
+  Raw ADC Voltage : 322.280 mV
+  Drop Across Rs  : 0.9110 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1065 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 39076
+  Raw ADC Voltage : 356.787 mV
+  Drop Across Rs  : 1.0647 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1076 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 39358
+  Raw ADC Voltage : 359.355 mV
+  Drop Across Rs  : 1.0762 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1072 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 39251
+  Raw ADC Voltage : 358.385 mV
+  Drop Across Rs  : 1.0718 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 1.2687 mA
+  Active Range    : MID (Case 2)
+  Raw ADC Counts  : 38804
+  Raw ADC Voltage : 354.301 mV
+  Drop Across Rs  : 12.6870 mV
+  Hardware Config : Gain = 18.64, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.23 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.23 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 1.2661 mA
+  Active Range    : MID (Case 2)
+  Raw ADC Counts  : 38752
+  Raw ADC Voltage : 353.821 mV
+  Drop Across Rs  : 12.6613 mV
+  Hardware Config : Gain = 18.64, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.24 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.24 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 1.2667 mA
+  Active Range    : MID (Case 2)
+  Raw ADC Counts  : 38764
+  Raw ADC Voltage : 353.932 mV
+  Drop Across Rs  : 12.6672 mV
+  Hardware Config : Gain = 18.64, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.24 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.24 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 1.0829 mA
+  Active Range    : MID (Case 2)
+  Raw ADC Counts  : 35010
+  Raw ADC Voltage : 319.655 mV
+  Drop Across Rs  : 10.8286 mV
+  Hardware Config : Gain = 18.64, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.25 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.25 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 1.0815 mA
+  Active Range    : MID (Case 2)
+  Raw ADC Counts  : 34982
+  Raw ADC Voltage : 319.399 mV
+  Drop Across Rs  : 10.8148 mV
+  Hardware Config : Gain = 18.64, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.24 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.24 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 1.0860 mA
+  Active Range    : MID (Case 2)
+  Raw ADC Counts  : 35073
+  Raw ADC Voltage : 320.232 mV
+  Drop Across Rs  : 10.8595 mV
+  Hardware Config : Gain = 18.64, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.24 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.24 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.2484 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 73960
+  Raw ADC Voltage : 675.289 mV
+  Drop Across Rs  : 2.4836 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.3378 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 95938
+  Raw ADC Voltage : 875.962 mV
+  Drop Across Rs  : 3.3776 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.3379 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 95962
+  Raw ADC Voltage : 876.174 mV
+  Drop Across Rs  : 3.3785 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.2479 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 73837
+  Raw ADC Voltage : 674.167 mV
+  Drop Across Rs  : 2.4786 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.2454 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 73224
+  Raw ADC Voltage : 668.567 mV
+  Drop Across Rs  : 2.4537 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.3348 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 95205
+  Raw ADC Voltage : 869.271 mV
+  Drop Across Rs  : 3.3478 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1490 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 49537
+  Raw ADC Voltage : 452.299 mV
+  Drop Across Rs  : 1.4902 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1504 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 49865
+  Raw ADC Voltage : 455.288 mV
+  Drop Across Rs  : 1.5035 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1508 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 49982
+  Raw ADC Voltage : 456.360 mV
+  Drop Across Rs  : 1.5083 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1054 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 38807
+  Raw ADC Voltage : 354.325 mV
+  Drop Across Rs  : 1.0538 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1051 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 38746
+  Raw ADC Voltage : 353.772 mV
+  Drop Across Rs  : 1.0513 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : -0.0021 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 12384
+  Raw ADC Voltage : 113.071 mV
+  Drop Across Rs  : -0.0210 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.46 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.46 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1045 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 38595
+  Raw ADC Voltage : 352.389 mV
+  Drop Across Rs  : 1.0451 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.45 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.45 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1007 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 37664
+  Raw ADC Voltage : 343.888 mV
+  Drop Across Rs  : 1.0073 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.45 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.45 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1016 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 37875
+  Raw ADC Voltage : 345.819 mV
+  Drop Across Rs  : 1.0159 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.46 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.46 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1017 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 37892
+  Raw ADC Voltage : 345.972 mV
+  Drop Across Rs  : 1.0166 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.44 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.44 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1255 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 43766
+  Raw ADC Voltage : 399.606 mV
+  Drop Across Rs  : 1.2555 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1264 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 43976
+  Raw ADC Voltage : 401.524 mV
+  Drop Across Rs  : 1.2640 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.46 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.46 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1230 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 43149
+  Raw ADC Voltage : 393.974 mV
+  Drop Across Rs  : 1.2304 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.46 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.46 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1039 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 38448
+  Raw ADC Voltage : 351.047 mV
+  Drop Across Rs  : 1.0392 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.45 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.46 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1047 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 38631
+  Raw ADC Voltage : 352.717 mV
+  Drop Across Rs  : 1.0466 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.48 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.48 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : -0.0000 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 12897
+  Raw ADC Voltage : 117.756 mV
+  Drop Across Rs  : -0.0001 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.46 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.46 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.0001 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 12918
+  Raw ADC Voltage : 117.951 mV
+  Drop Across Rs  : 0.0008 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.45 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.45 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.1037 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 38384
+  Raw ADC Voltage : 350.460 mV
+  Drop Across Rs  : 1.0365 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 1.1646 mA
+  Active Range    : MID (Case 2)
+  Raw ADC Counts  : 36679
+  Raw ADC Voltage : 334.898 mV
+  Drop Across Rs  : 11.6462 mV
+  Hardware Config : Gain = 18.64, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.22 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.22 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.7042 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 186028
+  Raw ADC Voltage : 1698.525 mV
+  Drop Across Rs  : 7.0419 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.46 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.46 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board3.sh
+
+======================================
+       TEST RESULTS: BOARD 3
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.0834 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 33400
+  Raw ADC Voltage : 304.957 mV
+  Drop Across Rs  : 0.8338 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.46 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.46 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board2.sh
+
+======================================
+       TEST RESULTS: BOARD 2
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.0832 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 33350
+  Raw ADC Voltage : 304.499 mV
+  Drop Across Rs  : 0.8318 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
+
+isc@isc:~/ravil_testing $ ./board1.sh
+
+======================================
+       TEST RESULTS: BOARD 1
+======================================
+
+  CURRENT MEASUREMENT:
+  ------------------------------------------------
+  Final Current   : 0.0804 mA
+  Active Range    : HIGH_GAIN (Case 3)
+  Raw ADC Counts  : 32663
+  Raw ADC Voltage : 298.229 mV
+  Drop Across Rs  : 0.8039 mV
+  Hardware Config : Gain = 224.48, Rs = 10.0 Ω, Offset = 117.78 mV
+  Execution Time  : 0.47 seconds
+  ------------------------------------------------
+
+  Total Test Time : 0.47 seconds
+======================================
