@@ -146,7 +146,7 @@ LED_SETTLE_S = 1.0
 # ── Pass windows, all mA ───────────────────────────────────────────────────
 # CALIBRATE THESE ON THIS JIG. See the warning in the docstring: the active
 # figure depends on how much audio this host actually drains.
-ACTIVE_LIMITS = (1.50, 4.50)
+ACTIVE_LIMITS = (1.50, 6.00)
 # Same mode, notifications switched off: mic, PDM, CPU and LED all still
 # running, but no radio traffic. Unlike the streaming figure this does not
 # depend on how fast the host can drain the link, so it is the one worth a
@@ -158,7 +158,7 @@ ACTIVE_QUIET_LIMITS = (1.20, 3.50)
 # touching the supply current. CALIBRATE IT -- it depends entirely on how far
 # the jig's controller sits from the module.
 RSSI_LIMITS = (-75.0, -20.0)
-SLEEP_LIMITS = (0.02, 0.29)     # 0.29 mA is the product's sleep budget
+SLEEP_LIMITS = (0.007, 0.20)     # 0.20 mA is the product's sleep budget
 # The white LED is PWM-dimmed in firmware; flat out it was 5.32 mA, at the
 # shipped 20% duty about 1.06 mA. A dead LED shows near zero delta, a wrong
 # part or an un-dimmed one shows far too much.

@@ -515,3 +515,23 @@ async def measure_async(bench, repeats, range_name=None):
 ```python
             row = await measure_async(bench, SLEEP_REPEATS, bench.current_module.RANGE_HIGH_GAIN)
 ```
+
+---
+
+### 3.4 CMSIS-DAP Flashing & FICR MAC Detection
+* **Earlier:**
+  OpenOCD commands used Raspberry Pi bitbang GPIO SWD configuration (`/home/isc/nrf52.cfg`).
+  Flashing executed manual DAP register register-level unlock sequence (`UNLOCK_SEQUENCE`) followed by `flash probe`, `flash write_image`, and `verify_image`.
+
+* **Now:**
+  Flashing and FICR detection now use CMSIS-DAP connected over USB with per-board VID/PID mapping:
+  - Board 1 (Target A): `0xc251 0xf001`
+  - Board 2 (Target B): `0x2fe3 0x0200`
+  - Board 3 (Target C): `0x2fe3 0x0204`
+
+  Using commands:
+  - Base: `-f interface/cmsis-dap.cfg -c "cmsis-dap backend usb_bulk" -c "cmsis-dap vid_pid <VID> <PID>" -c "transport select swd" -c "adapter speed 1000" -f target/nordic/nrf52.cfg`
+  - Unlock/Recover: `-c "init" -c "nrf52_recover" -c "shutdown"`
+  - Programming: `-c "program <hex_path> verify reset exit"`
+  - Detect: `read_ficr_mac(board_num)` executes OpenOCD with board-specific CMSIS-DAP to read FICR registers `0x100000A0`, `0x100000A4`, and `0x100000A8`. If an APPROTECT lock is detected, it automatically unlocks via `recover_chip(board_num)` and reads the FICR registers.
+

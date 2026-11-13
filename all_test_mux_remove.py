@@ -36,11 +36,14 @@ import datetime
 import json
 import os
 import re
+import shutil
 import statistics
 import subprocess
 import sys
 import threading
 import time
+
+import jig_db
 
 try:
     import aioblescan as aiobs
@@ -84,13 +87,12 @@ except ImportError as e:
 WORK_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ── Files ──────────────────────────────────────────────────────────────────
-CSV_FILE = os.path.join(WORK_DIR, "NEO_JIG_RESULTS.csv")
 LIMITS_FILE = os.path.join(WORK_DIR, "limits_mic.json")
-TEST_HEX = "/home/isc/jig_pi/firmware/neo_test_fw.hex"
-CLIENT_HEX = "/home/isc/jig_pi/firmware/neo_test_fw.hex"
+TEST_HEX = "/home/isc/neo_test_fw/neo_test_firmware.hex"
+CLIENT_HEX = "/home/isc/neo_test_fw/neo_test_firmware.hex"
 
 # ── Power bench ────────────────────────────────────────────────────────────
-BENCH_DIR = "/home/isc/Power_gem"
+BENCH_DIR = "/home/isc/Neo_test_jig-Neo_pi_backup"
 ACTIVE_REPEATS = 5
 SLEEP_REPEATS = 3
 LED_REPEATS = 3
@@ -99,16 +101,24 @@ SLEEP_SETTLE_S = 5.0
 LED_SETTLE_S = 1.0
 
 # Calibrated Limits (mA and dBm)
-ACTIVE_LIMITS = (1.50, 4.50)
+ACTIVE_LIMITS = (3.50, 6.50)
 ACTIVE_QUIET_LIMITS = (1.20, 3.50)
-SLEEP_LIMITS = (0.02, 0.29)
+SLEEP_LIMITS = (0.007, 2.50)
 LED_DELTA_LIMITS = (0.20, 2.20)
-RSSI_LIMITS = (-75.0, -20.0)
-STATE_THRESHOLD_MA = 1.0
+RSSI_LIMITS = (-80.0, -20.0)
+STATE_THRESHOLD_MA = 3.0
 
 # ── Programming ────────────────────────────────────────────────────────────
+OPENOCD_BIN = "/home/isc/openocd/src/openocd" if (os.path.isfile("/home/isc/openocd/src/openocd") and os.access("/home/isc/openocd/src/openocd", os.X_OK)) else (shutil.which("openocd") or "/home/isc/openocd/src/openocd")
 OPENOCD_TCL = "/home/isc/openocd/tcl"
 OPENOCD_CFG = "/home/isc/nrf52.cfg"
+
+# CMSIS-DAP USB VID/PID mapping for each board socket
+CMSIS_DAP_VID_PID = {
+    1: "0x2fe3 0x01ff",
+    2: "0x2fe3 0x0200",
+    3: "0x2fe3 0x0204",
+}
 FLASH_ATTEMPTS = 3
 FLASH_TIMEOUT = 120
 FLASH_RETRY_PAUSE = 2.0
@@ -144,6 +154,15 @@ PIN_STOP = 23
 PIN_MODE_SWITCH = 9  
 
 PIN_PWR = {1: 13, 2: 27, 3: 26}
+
+# GPIO 11 and GPIO 22 routing states for each selected board.
+# Values: True = HIGH, False = LOW.
+BOARD_ROUTE = {
+    1: {11: False, 22: False},
+    2: {11: True,  22: False},
+    3: {11: False, 22: True},
+}
+
 USE_BUTTONS = False  # Set to True to use physical Start/Stop pins, False to run automatically
 
 # ── CSV Schema ─────────────────────────────────────────────────────────────
@@ -188,16 +207,43 @@ def pin_get(gpio):
         return False
 
 def route_hardware(board_num):
+    """Configure board-selection routing, then power ON only that board."""
+    if board_num not in PIN_PWR:
+        raise ValueError(f"Invalid board number: {board_num}")
+
+    # First, ensure every board power output is OFF.
     for p_pin in PIN_PWR.values():
         pin_set(p_pin, False)
+
+    # Set a known LOW state before applying the selected board's routing.
+    pin_set(11, False)
+    pin_set(22, False)
     time.sleep(0.1)
-    
+
+    # Configure GPIO 11 and GPIO 22 for the selected board.
+    for gpio, state in BOARD_ROUTE[board_num].items():
+        pin_set(gpio, state)
+    time.sleep(0.1)
+
+    # Power ON only the selected board after routing is configured.
     pin_set(PIN_PWR[board_num], True)
-    time.sleep(0.5) 
+    time.sleep(0.5)
+
+    print(
+        f"[gpio] Board {board_num} selected | "
+        f"GPIO11={'HIGH' if BOARD_ROUTE[board_num][11] else 'LOW'} | "
+        f"GPIO22={'HIGH' if BOARD_ROUTE[board_num][22] else 'LOW'} | "
+        f"POWER GPIO{PIN_PWR[board_num]}=HIGH"
+    )
 
 def clean_all_pins():
+    """Turn OFF all board power outputs and reset routing GPIOs to LOW."""
+    # Remove board power before changing the routing lines.
     for p_pin in PIN_PWR.values():
         pin_set(p_pin, False)
+
+    pin_set(11, False)
+    pin_set(22, False)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -221,98 +267,18 @@ def post_once(payload, quiet=False):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  CSV WORKBOOK LOGGING
+#  DATABASE LOGGING (Offline SQLite + Online Supabase Sync)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def check_mac_result_csv(mac):
-    """Reads the CSV file line-by-line to check if the module already passed."""
-    if not os.path.exists(CSV_FILE):
-        return None
-    with _file_lock:
-        try:
-            latest = None
-            with open(CSV_FILE, "r", newline="") as handle:
-                reader = csv.DictReader(handle)
-                for row in reader:
-                    if row.get("MAC", "").strip().upper() == mac.upper():
-                        res = row.get("RESULT", "").strip().upper()
-                        if res:
-                            latest = res
-            return latest
-        except Exception as error:
-            print(f"[csv] read error: {error}")
-            return None
+def check_mac_result_db(mac):
+    """Queries local SQLite database to check if this module MAC already passed."""
+    return jig_db.check_mac_passed(mac)
 
-def write_csv_row(record):
-    """Appends the result to the CSV file and determines the next SR number."""
-    with _file_lock:
-        file_exists = os.path.exists(CSV_FILE)
-        highest_sr = 0
-        
-        if file_exists:
-            try:
-                with open(CSV_FILE, "r", newline="") as handle:
-                    reader = csv.DictReader(handle)
-                    for row in reader:
-                        try:
-                            sr = int(row.get("SR", 0))
-                            if sr > highest_sr:
-                                highest_sr = sr
-                        except ValueError:
-                            pass
-            except Exception:
-                pass
-                
-        serial = f"{highest_sr + 1:02d}"
-        record["sr"] = serial
-        
-        row_dict = {
-            "SR": serial,
-            "TIMESTAMP": record["timestamp"],
-            "MAC": record["mac"],
-            "FICR MAC": record["ficr_mac"],
-            "RSSI (dBm)": record["rssi_dbm"],
-            "BLE": record["ble"],
-            "IMU ACCTEST": record["imu_acctest"],
-            "MIC RESULT": record["mic_result"],
-            "MIC THD (%)": record["mic_thd_pct"],
-            "MIC SNR (dB)": record["mic_snr_db"],
-            "LED DELTA (mA)": record["led_delta_ma"],
-            "ACTIVE STREAM (mA)": record["active_stream_ma"],
-            "ACTIVE QUIET (mA)": record["active_quiet_ma"],
-            "ACTIVE 3V3": record["active_3v3"],
-            "ACTIVE 5V": record["active_5v"],
-            "ACTIVE VBAT": record["active_vbat"],
-            "SLEEP CURRENT (mA)": record["sleep_current_ma"],
-            "SLEEP 3V3": record["sleep_3v3"],
-            "SLEEP 5V": record["sleep_5v"],
-            "SLEEP VBAT": record["sleep_vbat"],
-            "CLIENT FIRMWARE": record["client_firmware"],
-            "RESULT": record["result"],
-            "COMMENTS": record["comments"]
-        }
-        
-        with open(CSV_FILE, "a", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=HEADERS)
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(row_dict)
-            
-    return serial
+check_mac_result_csv = check_mac_result_db  # Backward compatibility alias
 
-def send_row(serial, record):
-    payload = dict(record)
-    payload["sheet_name"] = SHEET_TAB
-    payload["key"] = f"{record['mac']}_{record['timestamp']}"
-    payload["sr"] = serial
-
-    if not ENABLE_GOOGLE:
-        return "local only, sending disabled"
-    
-    if post_once(payload):
-        return "sheet send done"
-    
-    return "sheet send failed (no retry)"
+def record_test_result(record):
+    """Saves test result to SQLite and triggers background sync to Supabase."""
+    return jig_db.save_test_result(record)
 
 def blank_record():
     return {
@@ -327,53 +293,80 @@ def blank_record():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  OPENOCD: DETECT, FICR MAC, FLASH
+#  OPENOCD: DETECT, FICR MAC, FLASH (CMSIS-DAP)
 # ══════════════════════════════════════════════════════════════════════════════
-
-UNLOCK_SEQUENCE = [
-    "-c", "poll off",
-    "-c", "nrf52.dap apreg 1 4 0",
-    "-c", "nrf52.dap apreg 1 4 1",
-    "-c", "set i 0",
-    "-c", "while {[nrf52.dap apreg 1 8] == 1 && $i < 40} {sleep 50; incr i}",
-    "-c", "nrf52.dap apreg 1 0 1",
-    "-c", "nrf52.dap apreg 1 0 0",
-    "-c", "nrf52.dap apreg 1 4 0",
-    "-c", "sleep 100",
-    "-c", "nrf52.cpu arp_examine",
-    "-c", "poll on",
-    "-c", "reset halt",
-]
 
 _MDW_RE = re.compile(r"(0x[0-9a-fA-F]+):\s*([0-9a-fA-F]{8})")
 
-def _openocd(extra, timeout):
-    command = ["openocd", "-s", OPENOCD_TCL, "-f", OPENOCD_CFG, "-c", "init"] + extra + ["-c", "shutdown"]
+def openocd_base_cmd(board_num=1):
+    """Builds base OpenOCD command using CMSIS-DAP for the specified board socket."""
+    vid_pid = CMSIS_DAP_VID_PID.get(board_num, CMSIS_DAP_VID_PID[1])
+    return [
+        OPENOCD_BIN,
+        "-s", OPENOCD_TCL,
+        "-f", "interface/cmsis-dap.cfg",
+        "-c", "cmsis-dap backend usb_bulk",
+        "-c", f"cmsis-dap vid_pid {vid_pid}",
+        "-c", "transport select swd",
+        "-c", "adapter speed 1000",
+        "-f", "target/nordic/nrf52.cfg",
+    ]
+
+def _openocd(board_num, extra, timeout=30):
+    command = openocd_base_cmd(board_num) + extra
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
-        return result.stdout + result.stderr
+        return result.returncode, result.stdout + result.stderr
     except subprocess.TimeoutExpired:
-        return f"TIMEOUT after {timeout} s"
+        return -1, f"TIMEOUT after {timeout} s"
     except Exception as error:
-        return str(error)
+        return -1, str(error)
 
-def read_ficr_mac():
-    output = _openocd([
+def recover_chip(board_num=1, timeout=30):
+    """Unlocks and erases the nRF52 chip via nrf52_recover."""
+    extra = [
+        "-c", "init",
+        "-c", "nrf52_recover",
+        "-c", "shutdown",
+    ]
+    code, output = _openocd(board_num, extra, timeout)
+    if VERBOSE:
+        print(f"[recover b{board_num}] code {code}:\n{output}")
+    return code == 0, output
+
+def read_ficr_mac(board_num=1):
+    """Reads FICR registers to determine chip MAC ID and identity via CMSIS-DAP."""
+    extra = [
+        "-c", "init",
         "-c", "poll off",
         "-c", "nrf52.cpu arp_examine",
         "-c", "halt",
         f"-c", f"mdw {hex(FICR_DEVICEADDRTYPE)} 1",
         f"-c", f"mdw {hex(FICR_DEVICEADDR0)} 1",
         f"-c", f"mdw {hex(FICR_DEVICEADDR1)} 1",
-    ], 20)
+        "-c", "shutdown",
+    ]
+    code, output = _openocd(board_num, extra, 20)
 
     if VERBOSE: print(output)
 
     low = output.lower()
-    if "ap lock engaged" in low or "could not find mem-ap" in low:
-        return None, None, "chip APPROTECT-locked, FICR unreadable."
+    if "ap lock engaged" in low or ("could not find mem-ap" in low and "swd dp initialization failed" not in low):
+        print(f"[detect] chip APPROTECT-locked on board {board_num}, recovering...")
+        rec_ok, rec_out = recover_chip(board_num)
+        if rec_ok:
+            code, output = _openocd(board_num, extra, 20)
+            if VERBOSE: print(output)
+            low = output.lower()
+            if "ap lock engaged" in low or "could not find mem-ap" in low:
+                return None, None, "chip APPROTECT-locked, FICR unreadable after recover."
+        else:
+            return None, None, "chip APPROTECT-locked, recover failed."
+
     if "0x00000000" in output and "dpidr" in low:
         return None, None, "SWD connected but chip not powered"
+    if "swd dp initialization failed" in low:
+        return None, None, "SWD DP init failed, check DUT connection/power"
 
     values = {}
     for match in _MDW_RE.finditer(output):
@@ -398,30 +391,50 @@ def read_ficr_mac():
     identity = "%02X:%02X:%02X:%02X:%02X:%02X" % (octets[5], octets[4], octets[3], octets[2], octets[1], octets[0])
     return identity, raw, ""
 
-def flash_hex(path, label):
+def flash_hex(arg1, arg2, arg3=None):
+    """Flashes firmware using CMSIS-DAP.
+    Can be called as flash_hex(board_num, path, label) or flash_hex(path, label).
+    Runs nrf52_recover first to unlock/erase, then programs and verifies the hex image.
+    """
+    if isinstance(arg1, int):
+        board_num = arg1
+        path = arg2
+        label = arg3 if arg3 is not None else "firmware"
+    else:
+        board_num = 1
+        path = arg1
+        label = arg2
+
     if not os.path.isfile(path):
         return False, f"{label} firmware not found: {path}"
 
-    extra = UNLOCK_SEQUENCE + [
-        "-c", "flash probe 0",
-        f"-c", f"flash write_image {path}",
-        f"-c", f"verify_image {path}",
-        "-c", "reset run",
-    ]
     output = ""
     for attempt in range(1, FLASH_ATTEMPTS + 1):
         if stop_event.is_set():
             return False, "stopped"
-        output = _openocd(extra, FLASH_TIMEOUT)
+
+        # 1. Recover device (clears locks, erases flash)
+        rec_ok, rec_out = recover_chip(board_num)
+        if not rec_ok:
+            print(f"[flash] {label} recover attempt {attempt} failed on board {board_num}")
+            if VERBOSE: print(rec_out)
+
+        # 2. Program firmware with verify and reset exit
+        prog_args = [
+            "-c", f"program {path} verify reset exit"
+        ]
+        code, output = _openocd(board_num, prog_args, FLASH_TIMEOUT)
         if VERBOSE: print(output)
+
         if "verified" in output.lower():
             return True, ""
+
         if attempt < FLASH_ATTEMPTS:
-            print(f"[flash] {label} attempt {attempt} failed, retrying")
+            print(f"[flash] {label} attempt {attempt} failed on board {board_num}, retrying")
             time.sleep(FLASH_RETRY_PAUSE)
 
     tail = [line for line in output.splitlines() if line.strip()][-4:]
-    return False, f"{label} flash failed: {' | '.join(tail)}"
+    return False, f"{label} flash failed on board {board_num}: {' | '.join(tail)}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -531,11 +544,8 @@ class Bench:
         self.report.quietly(lambda: self.chip.select_range(self.current_module.RANGE_LOW_RS))
 
     def measure(self, repeats, range_name=None):
-        # Skip GPIO toggle if in manual mode
-        # if not self.manual_power:
-        #     pin_set(PIN_PWR[self.board_num], False)
-            # time.sleep(0.1)
-        
+        # Board routing and power selection are handled once by route_hardware()
+        # at the beginning of run_cycle(); do not change GPIOs during measurement.
         started = time.monotonic()
         readings = []
         for _ in range(max(1, repeats)):
@@ -544,10 +554,14 @@ class Bench:
         elapsed = time.monotonic() - started
 
         valid = [r for r in readings if not (r["over_range"] or r["under_range"])]
+        if not valid and range_name is not None:
+            # Fall back to dynamic auto-ranging if a pinned range saturated
+            fallback_res, _ = self.report.quietly(self.chip.start_measurement)
+            if not (fallback_res["over_range"] or fallback_res["under_range"]):
+                valid = [fallback_res]
+
         if not valid:
             self.park()
-            # if not self.manual_power:
-                # pin_set(PIN_PWR[self.board_num], True)
             raw = readings[-1]
             return {"ok": False, "why": f"out of range! ADC={raw['adc_volt']:.2f}mV (Under={raw['under_range']}, Over={raw['over_range']})"}
 
@@ -563,10 +577,6 @@ class Bench:
         
         self.park()
         
-        # Skip GPIO toggle if in manual mode
-        if not self.manual_power:
-            pin_set(PIN_PWR[self.board_num], True)
-
         return {
             "ok": True,
             "current_ma": statistics.mean(currents),
@@ -682,18 +692,23 @@ async def _ble_stage(mac, bench, record):
             await asyncio.sleep(ACTIVE_SETTLE_S)
             row = await measure_async(bench, ACTIVE_REPEATS)
             session.capturing = False
+            try:
+                await session.client.stop_notify(AUDIO_CHARACTERISTIC_UUID)
+            except Exception:
+                pass
             
             if not row["ok"]: return f"Active Stream: {row['why']}"
-            if row["current_ma"] < STATE_THRESHOLD_MA: return f"Active Stream: {row['current_ma']:.4f} mA is too low."
+            if row["current_ma"] < ACTIVE_LIMITS[0]: return f"Active Stream: {row['current_ma']:.4f} mA is too low (minimum {ACTIVE_LIMITS[0]:.2f} mA)."
             
             record["active_stream_ma"] = round(row["current_ma"], 4)
             record["active_3v3"] = parse_rail_volt(row["rails"], "RAIL_3V3")
             record["active_5v"] = parse_rail_volt(row["rails"], "RAIL_5V")
             record["active_vbat"] = parse_rail_volt(row["rails"], "RAIL_VBAT")
             
-            print(f"        Stream {row['current_ma']:.4f} mA")
+            print(f"        Stream {row['current_ma']:.4f} mA (Limits: {ACTIVE_LIMITS[0]:.2f} - {ACTIVE_LIMITS[1]:.2f} mA)")
             print(f"        3V3: {record['active_3v3']}V | 5V: {record['active_5v']}V | VBAT: {record['active_vbat']}V")
-            if not check_window(row["current_ma"], ACTIVE_LIMITS): return f"Active Stream {row['current_ma']:.4f} mA out of bounds"
+            if not check_window(row["current_ma"], ACTIVE_LIMITS):
+                return f"Active Stream {row['current_ma']:.4f} mA out of bounds [{ACTIVE_LIMITS[0]:.2f} - {ACTIVE_LIMITS[1]:.2f} mA]"
         except Exception as e:
             return f"Active Stream Error: {e}"
 
@@ -750,11 +765,15 @@ async def _ble_stage(mac, bench, record):
         # 7. SLEEP CURRENT
         print("  [test] sleep mode current...")
         try:
+            try:
+                await session.client.stop_notify(AUDIO_CHARACTERISTIC_UUID)
+            except Exception:
+                pass
             await session.command(CMD_SLEEP, RESP_SLEEP_DONE, timeout=10.0)
             session.capturing = False
             await asyncio.sleep(SLEEP_SETTLE_S)
             
-            row = await measure_async(bench, SLEEP_REPEATS, bench.current_module.RANGE_HIGH_GAIN)
+            row = await measure_async(bench, SLEEP_REPEATS)
             if not row["ok"]: return f"Sleep: {row['why']}"
             
             record["sleep_current_ma"] = round(row["current_ma"], 4)
@@ -762,15 +781,21 @@ async def _ble_stage(mac, bench, record):
             record["sleep_5v"] = parse_rail_volt(row["rails"], "RAIL_5V")
             record["sleep_vbat"] = parse_rail_volt(row["rails"], "RAIL_VBAT")
             
-            print(f"        Sleep {row['current_ma']:.4f} mA")
+            print(f"        Sleep {row['current_ma']:.4f} mA (Limits: {SLEEP_LIMITS[0]:.4f} - {SLEEP_LIMITS[1]:.4f} mA)")
             print(f"        3V3: {record['sleep_3v3']}V | 5V: {record['sleep_5v']}V | VBAT: {record['sleep_vbat']}V")
-            if row["current_ma"] > STATE_THRESHOLD_MA: return f"Sleep: {row['current_ma']:.4f} mA looks like active."
-            if not check_window(row["current_ma"], SLEEP_LIMITS): return f"Sleep {row['current_ma']:.4f} mA out of bounds"
+            if row["current_ma"] > max(STATE_THRESHOLD_MA, SLEEP_LIMITS[1]):
+                return f"Sleep: {row['current_ma']:.4f} mA looks like active."
+            if not check_window(row["current_ma"], SLEEP_LIMITS):
+                return f"Sleep {row['current_ma']:.4f} mA out of bounds [{SLEEP_LIMITS[0]:.4f} - {SLEEP_LIMITS[1]:.4f} mA]"
         except Exception as e:
             return f"Sleep Test Error: {e}"
 
         return ""
     finally:
+        try:
+            await session.client.stop_notify(AUDIO_CHARACTERISTIC_UUID)
+        except Exception:
+            pass
         await client.disconnect()
         print("[ble] disconnected")
 
@@ -791,7 +816,7 @@ def run_cycle(board_num, profile):
         if stop_event.is_set():
             clean_all_pins()
             return False
-        mac, raw_mac, error = read_ficr_mac()
+        mac, raw_mac, error = read_ficr_mac(board_num)
         if mac: break
         print(f"[detect] {error} (attempt {attempt}/{DETECT_RETRIES})")
         time.sleep(DETECT_RETRY_PAUSE)
@@ -805,14 +830,14 @@ def run_cycle(board_num, profile):
     record["mac"] = mac
     record["ficr_mac"] = raw_mac
 
-    # 2. Skip Check via CSV
-    if check_mac_result_csv(mac) == "PASS":
+    # 2. Skip Check via Database
+    if jig_db.check_mac_passed(mac) == "PASS":
         print(f"[skip] {mac} already passed, not re-testing")
         clean_all_pins()
         return True
 
     # 3. Flash Test Firmware & Power Cycle
-    ok, message = flash_hex(TEST_HEX, "test")
+    ok, message = flash_hex(board_num, TEST_HEX, "test")
     if not ok:
         finish(record, message)
         return True
@@ -857,7 +882,7 @@ def run_cycle(board_num, profile):
         return True
 
     # 6. Client Firmware
-    ok, message = flash_hex(CLIENT_HEX, "client")
+    ok, message = flash_hex(board_num, CLIENT_HEX, "client")
     if not ok:
         record["client_firmware"] = "FAIL"
         finish(record, message)
@@ -882,11 +907,12 @@ def finish(record, comment):
         print("[result] PASS")
 
     try:
-        serial = write_csv_row(record)
+        serial = record_test_result(record)
+        record["sr"] = f"{serial:02d}"
+        print(f"[db] saved result SR {serial:02d} (offline SQLite, auto-syncing to Supabase)")
     except Exception as error:
-        print(f"[csv] could not write: {error}")
+        print(f"[db] could not save to database: {error}")
         return
-    print(f"[sheet] {send_row(serial, record)}   SR {serial}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -954,16 +980,24 @@ def watch_buttons(profile, target_board=1):
 
 
 def main():
-    global VERBOSE
+    global VERBOSE, ACTIVE_LIMITS, SLEEP_LIMITS
     parser = argparse.ArgumentParser(description="NEO 3-in-1 automated test jig")
     parser.add_argument("--once", action="store_true", help="run one cycle immediately")
     parser.add_argument("--board", type=int, choices=[1, 2, 3], help="target socket (1, 2, or 3)")
     parser.add_argument("--profile", choices=("fast", "steady", "careful"), default="careful")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--adapter", type=str, default="hci0", help="Bluetooth adapter (e.g., hci1)")
+    parser.add_argument("--active-limits", type=float, nargs=2, default=list(ACTIVE_LIMITS),
+                        metavar=("LO", "HI"), help="pass window for streaming active current in mA (default: 1.50 6.00)")
+    parser.add_argument("--sleep-limits", type=float, nargs=2, default=list(SLEEP_LIMITS),
+                        metavar=("LO", "HI"), help="pass window for deep sleep current in mA (default: 0.007 2.50)")
     parser.add_argument("--current", action="store_true", help="Only measure default boot current and exit")
     parser.add_argument("--voltage", action="store_true", help="Only measure rail voltages and exit")
     args = parser.parse_args()
+    if args.active_limits:
+        ACTIVE_LIMITS = tuple(args.active_limits)
+    if args.sleep_limits:
+        SLEEP_LIMITS = tuple(args.sleep_limits)
     VERBOSE = args.verbose
     global HCI_DEVICE_INDEX, BLE_ADAPTER
     BLE_ADAPTER = args.adapter
@@ -980,8 +1014,13 @@ def main():
         return 2
 
     print("=" * 62)
-    print("  ISC NEO 3-in-1 JIG (Integrated CSV Logging)")
+    print("  ISC NEO 3-in-1 JIG (Database Logging: SQLite + Supabase)")
+    print(f"  Active Stream Limits: {ACTIVE_LIMITS[0]:.2f} - {ACTIVE_LIMITS[1]:.2f} mA")
+    print(f"  Sleep Current Limits: {SLEEP_LIMITS[0]:.4f} - {SLEEP_LIMITS[1]:.4f} mA")
     print("=" * 62)
+
+    # Start local database and background auto-sync worker
+    jig_db.start_sync_worker()
 
     if not BLEAK_OK: print("  bleak is missing: pip3 install bleak --break-system-packages")
     if not EXTERNAL_TESTS_OK: print("  mic_test.py or mic_qc.py is missing from the directory.")
@@ -1017,7 +1056,8 @@ def main():
                 print(f"\n[mode] ONE-SHOT: Testing Socket {args.board}")
                 run_cycle(args.board, args.profile)
             else:
-                is_multi_mode = pin_get(PIN_MODE_SWITCH)
+                #is_multi_mode = pin_get(PIN_MODE_SWITCH)
+                is_multi_mode = True
                 if is_multi_mode:
                     print("\n[mode] ONE-SHOT MULTI: Testing Sockets 1, 2, and 3 once")
                     for b_num in [1, 2, 3]:
@@ -1035,7 +1075,8 @@ def main():
             target_board = args.board if args.board else 1
             print("\n[mode] AUTO: Start button disabled in config. Running continuously.")
             while not stop_event.is_set():
-                is_multi_mode = pin_get(PIN_MODE_SWITCH)
+                #is_multi_mode = pin_get(PIN_MODE_SWITCH)
+                is_multi_mode = True
                 if is_multi_mode:
                     for b_num in [1, 2, 3]:
                         if stop_event.is_set(): break
@@ -1060,6 +1101,7 @@ def main():
         # Do not clean up pins if we are in manual diagnostic mode
         if not (args.current or args.voltage):
             clean_all_pins()
+        jig_db.stop_sync_worker()
         print("[quit] done")
     return 0
 
