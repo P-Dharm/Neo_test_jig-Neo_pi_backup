@@ -40,6 +40,9 @@ SUPABASE_URL = "https://biqnkyuwdgyuzlgfmtmp.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpcW5reXV3ZGd5dXpsZ2ZtdG1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NzcyNjEsImV4cCI6MjEwOTQ1MzI2MX0.6aY9E4raqTKfLlmPQyVxijwcfh_yWH-4942SkKcEW-A"
 SUPABASE_TABLE = "jig_test_results"
 
+# Master toggle for online Supabase push (False = offline SQLite only)
+ENABLE_SUPABASE = False
+
 # Station / Jig identifier (helps differentiate multiple jigs uploading to one Supabase DB)
 DEFAULT_JIG_ID = "JIG_01"
 JIG_ID = "JIG_01"
@@ -134,18 +137,11 @@ def init_db(db_path: Optional[str] = None):
                         ble TEXT,
                         imu_acctest TEXT,
                         mic_result TEXT,
-                        mic_thd_pct REAL,
-                        mic_snr_db REAL,
                         led_delta_ma REAL,
+                        amber_led_delta_ma REAL,
                         active_stream_ma REAL,
-                        active_quiet_ma REAL,
-                        active_3v3 REAL,
-                        active_5v REAL,
-                        active_vbat REAL,
+                        V_charging REAL,
                         sleep_current_ma REAL,
-                        sleep_3v3 REAL,
-                        sleep_5v REAL,
-                        sleep_vbat REAL,
                         client_firmware TEXT,
                         result TEXT NOT NULL,
                         comments TEXT,
@@ -164,6 +160,14 @@ def init_db(db_path: Optional[str] = None):
                     CREATE INDEX IF NOT EXISTS idx_synced
                     ON test_results(synced, sr);
                 """)
+                # Migrate existing table if missing V_charging / amber_led_delta_ma columns
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA table_info(test_results);")
+                cols = [row[1] for row in cursor.fetchall()]
+                if cols and "V_charging" not in cols:
+                    conn.execute("ALTER TABLE test_results ADD COLUMN V_charging REAL;")
+                if cols and "amber_led_delta_ma" not in cols:
+                    conn.execute("ALTER TABLE test_results ADD COLUMN amber_led_delta_ma REAL;")
             logger.info(f"Local SQLite database initialized at {_active_db_path}")
         finally:
             conn.close()
@@ -211,18 +215,11 @@ def save_test_result(record: Dict[str, Any]) -> int:
     ble = _to_str(record.get("ble"))
     imu_acctest = _to_str(record.get("imu_acctest"))
     mic_result = _to_str(record.get("mic_result"))
-    mic_thd_pct = _to_float(record.get("mic_thd_pct"))
-    mic_snr_db = _to_float(record.get("mic_snr_db"))
     led_delta_ma = _to_float(record.get("led_delta_ma"))
+    amber_led_delta_ma = _to_float(record.get("amber_led_delta_ma"))
     active_stream_ma = _to_float(record.get("active_stream_ma"))
-    active_quiet_ma = _to_float(record.get("active_quiet_ma"))
-    active_3v3 = _to_float(record.get("active_3v3"))
-    active_5v = _to_float(record.get("active_5v"))
-    active_vbat = _to_float(record.get("active_vbat"))
+    v_charging = _to_float(record.get("V_charging"))
     sleep_current_ma = _to_float(record.get("sleep_current_ma"))
-    sleep_3v3 = _to_float(record.get("sleep_3v3"))
-    sleep_5v = _to_float(record.get("sleep_5v"))
-    sleep_vbat = _to_float(record.get("sleep_vbat"))
     client_firmware = _to_str(record.get("client_firmware"))
     result = _to_str(record.get("result")) or "FAIL"
     comments = _to_str(record.get("comments"))
@@ -235,25 +232,22 @@ def save_test_result(record: Dict[str, Any]) -> int:
                 cursor.execute("""
                     INSERT INTO test_results (
                         jig_id, timestamp, mac, ficr_mac, rssi_dbm, ble,
-                        imu_acctest, mic_result, mic_thd_pct, mic_snr_db,
-                        led_delta_ma, active_stream_ma, active_quiet_ma,
-                        active_3v3, active_5v, active_vbat,
-                        sleep_current_ma, sleep_3v3, sleep_5v, sleep_vbat,
+                        imu_acctest, mic_result,
+                        led_delta_ma, amber_led_delta_ma, active_stream_ma,
+                        V_charging, sleep_current_ma,
                         client_firmware, result, comments, synced
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?,
+                        ?, ?,
                         ?, ?, ?,
-                        ?, ?, ?,
-                        ?, ?, ?, ?,
+                        ?, ?,
                         ?, ?, ?, 0
                     );
                 """, (
                     jig, ts, mac, ficr_mac, rssi_dbm, ble,
-                    imu_acctest, mic_result, mic_thd_pct, mic_snr_db,
-                    led_delta_ma, active_stream_ma, active_quiet_ma,
-                    active_3v3, active_5v, active_vbat,
-                    sleep_current_ma, sleep_3v3, sleep_5v, sleep_vbat,
+                    imu_acctest, mic_result,
+                    led_delta_ma, amber_led_delta_ma, active_stream_ma,
+                    v_charging, sleep_current_ma,
                     client_firmware, result, comments
                 ))
                 serial = cursor.lastrowid
@@ -322,7 +316,9 @@ def get_sync_stats() -> Dict[str, int]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def is_supabase_configured() -> bool:
-    """Checks if valid Supabase credentials have been configured."""
+    """Checks if Supabase sync is enabled and valid credentials are configured."""
+    if not ENABLE_SUPABASE:
+        return False
     return bool(
         SUPABASE_URL
         and "your-project-ref" not in SUPABASE_URL
@@ -369,18 +365,11 @@ def push_batch_to_supabase(records: List[Dict[str, Any]]) -> bool:
             "ble": r["ble"],
             "imu_acctest": r["imu_acctest"],
             "mic_result": r["mic_result"],
-            "mic_thd_pct": r["mic_thd_pct"],
-            "mic_snr_db": r["mic_snr_db"],
             "led_delta_ma": r["led_delta_ma"],
+            "amber_led_delta_ma": r["amber_led_delta_ma"] if "amber_led_delta_ma" in r.keys() else None,
             "active_stream_ma": r["active_stream_ma"],
-            "active_quiet_ma": r["active_quiet_ma"],
-            "active_3v3": r["active_3v3"],
-            "active_5v": r["active_5v"],
-            "active_vbat": r["active_vbat"],
+            "V_charging": _to_float(r["V_charging"]) if "V_charging" in r.keys() else None,
             "sleep_current_ma": r["sleep_current_ma"],
-            "sleep_3v3": r["sleep_3v3"],
-            "sleep_5v": r["sleep_5v"],
-            "sleep_vbat": r["sleep_vbat"],
             "client_firmware": r["client_firmware"],
             "result": r["result"],
             "comments": r["comments"]
@@ -454,14 +443,18 @@ def _sync_worker_loop():
 
 
 def trigger_sync():
-    """Wakes the background sync thread immediately."""
-    _sync_wake_event.set()
+    """Wakes the background sync thread immediately if Supabase is enabled."""
+    if ENABLE_SUPABASE:
+        _sync_wake_event.set()
 
 
 def start_sync_worker(db_path: Optional[str] = None):
-    """Starts the background auto-sync worker thread."""
+    """Starts the background auto-sync worker thread if ENABLE_SUPABASE is True."""
     global _sync_thread
     init_db(db_path)
+    if not ENABLE_SUPABASE:
+        logger.info("Supabase push disabled (ENABLE_SUPABASE=False). Local SQLite only.")
+        return
     if _sync_thread is not None and _sync_thread.is_alive():
         return
 

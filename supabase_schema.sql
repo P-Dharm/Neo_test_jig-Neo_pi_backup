@@ -19,18 +19,11 @@ CREATE TABLE IF NOT EXISTS public.jig_test_results (
     ble TEXT,
     imu_acctest TEXT,
     mic_result TEXT,
-    mic_thd_pct DOUBLE PRECISION,
-    mic_snr_db DOUBLE PRECISION,
     led_delta_ma DOUBLE PRECISION,
+    amber_led_delta_ma DOUBLE PRECISION,
     active_stream_ma DOUBLE PRECISION,
-    active_quiet_ma DOUBLE PRECISION,
-    active_3v3 DOUBLE PRECISION,
-    active_5v DOUBLE PRECISION,
-    active_vbat DOUBLE PRECISION,
+    V_charging DOUBLE PRECISION,
     sleep_current_ma DOUBLE PRECISION,
-    sleep_3v3 DOUBLE PRECISION,
-    sleep_5v DOUBLE PRECISION,
-    sleep_vbat DOUBLE PRECISION,
     client_firmware TEXT,
     result TEXT NOT NULL,
     comments TEXT,
@@ -70,3 +63,27 @@ TO anon, authenticated
 USING (true)
 WITH CHECK (true);
 
+-- ==============================================================================
+--  MIGRATION SCRIPT FOR EXISTING SUPABASE TABLES
+-- ==============================================================================
+-- Run the following commands in Supabase SQL Editor to update an existing table:
+--
+-- 1. Ensure V_charging column exists:
+-- ALTER TABLE public.jig_test_results ADD COLUMN IF NOT EXISTS "V_charging" DOUBLE PRECISION;
+--
+-- 1b. Ensure amber_led_delta_ma column exists:
+-- ALTER TABLE public.jig_test_results ADD COLUMN IF NOT EXISTS amber_led_delta_ma DOUBLE PRECISION;
+--
+-- 2. Drop legacy voltage columns:
+-- ALTER TABLE public.jig_test_results DROP COLUMN IF EXISTS active_3v3;
+-- ALTER TABLE public.jig_test_results DROP COLUMN IF EXISTS active_5v;
+-- ALTER TABLE public.jig_test_results DROP COLUMN IF EXISTS active_vbat;
+-- ALTER TABLE public.jig_test_results DROP COLUMN IF EXISTS sleep_3v3;
+-- ALTER TABLE public.jig_test_results DROP COLUMN IF EXISTS sleep_5v;
+-- ALTER TABLE public.jig_test_results DROP COLUMN IF EXISTS sleep_vbat;
+--
+-- 3. Drop removed test metrics:
+-- ALTER TABLE public.jig_test_results DROP COLUMN IF EXISTS mic_thd_pct;
+-- ALTER TABLE public.jig_test_results DROP COLUMN IF EXISTS mic_snr_db;
+-- ALTER TABLE public.jig_test_results DROP COLUMN IF EXISTS active_quiet_ma;
+-- ALTER TABLE public.jig_test_results DROP COLUMN IF EXISTS active_quiet_db;

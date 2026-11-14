@@ -1,0 +1,17 @@
+{
+  "12345678-1234-5678-1234-56789ABCDEF1": {
+    "val_handle": 14,
+    "cccd_handle": 15,
+    "properties": 16
+  },
+  "12345678-1234-5678-1234-56789ABCDEF2": {
+    "val_handle": 17,
+    "cccd_handle": null,
+    "properties": 12
+  },
+  "12345678-1234-5678-1234-56789ABCDEF3": {
+    "val_handle": 19,
+    "cccd_handle": 20,
+    "properties": 18
+  }
+}
