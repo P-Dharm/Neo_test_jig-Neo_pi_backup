@@ -35,6 +35,7 @@ import csv
 import datetime
 import json
 import os
+import queue
 import re
 import shutil
 import statistics
@@ -146,7 +147,18 @@ CMSIS_DAP_SERIAL = {
     3: "E35E8B7E733FD598",
 }
 
-# ── Per-Socket State Tracking (6 Round Variables) ──────────────────────────
+# ── Per-Socket State Tracking & FCFS Ready Queue ───────────────────────────
+ready_queue = queue.PriorityQueue()
+_queue_lock = threading.Lock()
+_state_lock = threading.Lock()
+_measuring_active = threading.Event()
+
+socket_state = {
+    1: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False},
+    2: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False},
+    3: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False},
+}
+
 test_firmware_flash_b1 = False
 FICR_b1 = None
 test_firmware_flash_b2 = False
@@ -155,33 +167,59 @@ test_firmware_flash_b3 = False
 FICR_b3 = None
 
 def get_board_ficr(board_num):
-    if board_num == 1: return FICR_b1
-    if board_num == 2: return FICR_b2
-    if board_num == 3: return FICR_b3
-    return None
+    return socket_state.get(board_num, {}).get("mac")
 
 def set_board_ficr(board_num, value):
     global FICR_b1, FICR_b2, FICR_b3
+    if board_num in socket_state:
+        socket_state[board_num]["mac"] = value
     if board_num == 1: FICR_b1 = value
     elif board_num == 2: FICR_b2 = value
     elif board_num == 3: FICR_b3 = value
 
 def get_board_test_flashed(board_num):
-    if board_num == 1: return test_firmware_flash_b1
-    if board_num == 2: return test_firmware_flash_b2
-    if board_num == 3: return test_firmware_flash_b3
-    return False
+    return socket_state.get(board_num, {}).get("test_flashed", False)
 
 def set_board_test_flashed(board_num, value):
     global test_firmware_flash_b1, test_firmware_flash_b2, test_firmware_flash_b3
-    if board_num == 1: test_firmware_flash_b1 = bool(value)
-    elif board_num == 2: test_firmware_flash_b2 = bool(value)
-    elif board_num == 3: test_firmware_flash_b3 = bool(value)
+    val = bool(value)
+    if board_num in socket_state:
+        socket_state[board_num]["test_flashed"] = val
+    if board_num == 1: test_firmware_flash_b1 = val
+    elif board_num == 2: test_firmware_flash_b2 = val
+    elif board_num == 3: test_firmware_flash_b3 = val
 
 def print_tracking_state():
-    print(f"[state] B1: FICR={FICR_b1}, Flashed={test_firmware_flash_b1} | "
-          f"B2: FICR={FICR_b2}, Flashed={test_firmware_flash_b2} | "
-          f"B3: FICR={FICR_b3}, Flashed={test_firmware_flash_b3}")
+    items = []
+    for b in [1, 2, 3]:
+        s = socket_state[b]
+        items.append(f"B{b}: MAC={s['mac']}, Flashed={s['test_flashed']}, Retries={s['flash_retry_count']}/3, InQ={s['in_queue']}, Testing={s['is_testing']}")
+    print(f"[state] {' | '.join(items)} | ReadyQueue={ready_queue.qsize()}")
+
+def enqueue_ready_board(board_num, ready_time=None):
+    if ready_time is None:
+        ready_time = time.monotonic()
+    with _queue_lock:
+        if not socket_state[board_num]["in_queue"] and not socket_state[board_num]["is_testing"]:
+            socket_state[board_num]["in_queue"] = True
+            ready_queue.put((ready_time, board_num))
+            print(f"[fcfs] -> Board {board_num} (ready_time={ready_time:.2f}) enqueued for testing. (Queue size: {ready_queue.qsize()})")
+
+def handle_flash_failure(board_num, err):
+    with _state_lock:
+        socket_state[board_num]["flash_retry_count"] += 1
+        cnt = socket_state[board_num]["flash_retry_count"]
+        mac = socket_state[board_num]["mac"]
+        if cnt < 3:
+            print(f"[flash-retry] Board {board_num} ({mac}) flash failed (attempt {cnt}/3). Will retry on next chance: {err}")
+        else:
+            print(f"[flash-retry] Board {board_num} ({mac}) flash failed 3 times! Recording FAIL to DB: {err}")
+            socket_state[board_num]["flash_permanently_failed"] = True
+            pin_set(PIN_PWR[board_num], False)
+            record = blank_record()
+            record["mac"] = mac or f"UNKNOWN_B{board_num}"
+            record["ficr_mac"] = mac or f"UNKNOWN_B{board_num}"
+            finish(record, f"Test FW flash failed after 3 attempts: {err}", cleanup=False)
 
 FLASH_ATTEMPTS = 3
 FLASH_TIMEOUT = 120
@@ -1500,14 +1538,18 @@ def start_background_flash_test(board_num):
             info["error"] = err
             if ok:
                 set_board_test_flashed(board_num, True)
+                socket_state[board_num]["flash_retry_count"] = 0
                 print(f"[flash-bg] <- Board {board_num} test firmware FLASHED successfully! Rebooting board...")
                 pin_set(PIN_PWR[board_num], False)
                 time.sleep(0.3)
                 pin_set(PIN_PWR[board_num], True)
                 time.sleep(POST_FLASH_REBOOT_S)
+                ready_time = time.monotonic()
+                enqueue_ready_board(board_num, ready_time)
             else:
                 set_board_test_flashed(board_num, False)
                 print(f"[flash-bg] <- Board {board_num} test firmware flash FAILED: {err}")
+                handle_flash_failure(board_num, err)
             info["done_event"].set()
 
         t = threading.Thread(target=_worker, name=f"flash_test_b{board_num}", daemon=True)
@@ -1588,55 +1630,95 @@ def wait_all_flashing(timeout=FLASH_TIMEOUT + 10):
     for b in boards:
         wait_for_board_flash(b, timeout=timeout)
 
-def detect_and_flash_untested_boards():
-    """Reads FICR MAC on all sockets, updates 6 tracking variables, and launches
+def detect_and_flash_untested_boards(batch_time=None):
+    """Reads FICR MAC on all sockets, updates socket state, and launches
     background test firmware flashing for any untested board not yet in the database.
     """
-    print("[detect-all] Scanning sockets 1, 2, and 3...")
+    if batch_time is None:
+        batch_time = time.monotonic()
+
+    if _measuring_active.is_set():
+        return
+
     for b in [1, 2, 3]:
-        if stop_event.is_set():
+        if stop_event.is_set() or _measuring_active.is_set():
             break
+
+        if socket_state[b]["is_testing"]:
+            continue
 
         with _flash_threads_lock:
             existing = _flash_threads.get(b)
             if existing and existing["thread"].is_alive():
-                print(f"[detect-all] Board {b} is actively flashing ({existing['type']}), skipping FICR read.")
                 continue
 
+        # If permanently failed, check if board was removed or changed
+        if socket_state[b]["flash_permanently_failed"]:
+            pin_set(PIN_PWR[b], True)
+            time.sleep(0.05)
+            mac, raw_mac, err = read_ficr_mac(b)
+            if not mac or mac != socket_state[b]["mac"]:
+                print(f"[detect-all] Socket {b} previously failed board removed/replaced. Resetting socket.")
+                socket_state[b]["mac"] = mac
+                socket_state[b]["raw_mac"] = raw_mac
+                socket_state[b]["test_flashed"] = False
+                socket_state[b]["flash_retry_count"] = 0
+                socket_state[b]["flash_permanently_failed"] = False
+                socket_state[b]["in_queue"] = False
+                if not mac:
+                    pin_set(PIN_PWR[b], False)
+                    continue
+            else:
+                pin_set(PIN_PWR[b], False)
+                continue
+
+        # Turn ON socket power to probe SWD / FICR
+        pin_set(PIN_PWR[b], True)
+        time.sleep(0.05)
         mac, raw_mac, err = read_ficr_mac(b)
         old_ficr = get_board_ficr(b)
+
         if not mac:
             if old_ficr is not None:
                 print(f"[detect-all] Socket {b} now empty (was {old_ficr})")
             set_board_ficr(b, None)
+            socket_state[b]["raw_mac"] = None
             set_board_test_flashed(b, False)
+            socket_state[b]["flash_retry_count"] = 0
+            socket_state[b]["flash_permanently_failed"] = False
+            socket_state[b]["in_queue"] = False
+            pin_set(PIN_PWR[b], False)
             continue
 
         if mac != old_ficr:
             print(f"[detect-all] Socket {b}: detected new module {mac} (FICR {raw_mac})")
             set_board_ficr(b, mac)
+            socket_state[b]["raw_mac"] = raw_mac
             set_board_test_flashed(b, False)
+            socket_state[b]["flash_retry_count"] = 0
+            socket_state[b]["flash_permanently_failed"] = False
+            socket_state[b]["in_queue"] = False
         else:
             set_board_ficr(b, mac)
 
         if jig_db.check_mac_passed(mac) == "PASS":
-            print(f"[detect-all] Socket {b} ({mac}) already PASSED in DB, skipping.")
+            pin_set(PIN_PWR[b], False)
             continue
 
         if not get_board_test_flashed(b):
             print(f"[detect-all] Socket {b} ({mac}) needs test firmware, launching background flash...")
             start_background_flash_test(b)
         else:
-            print(f"[detect-all] Socket {b} ({mac}) already has test firmware flashed.")
-    print_tracking_state()
+            # Already has test firmware flashed, enqueue for FCFS test stage
+            enqueue_ready_board(b, batch_time)
 
 def run_board_stage(board_num, profile):
-    """Executes the test sequence for board_num within the overlapped round-robin pipeline.
+    """Executes the test sequence for board_num within the FCFS pipeline.
     Overlaps BLE connect / IMU / Mic test while other boards flash client/test firmware.
     Ensures power is strictly isolated to board_num when measuring current.
     """
     print("\n" + "=" * 62)
-    print(f"  OVERLAPPED STAGE: TESTING BOARD {board_num}")
+    print(f"  FCFS STAGE: TESTING BOARD {board_num}")
     print("=" * 62)
 
     mac = get_board_ficr(board_num)
@@ -1662,6 +1744,7 @@ def run_board_stage(board_num, profile):
             record["mac"] = mac
             record["ficr_mac"] = mac
             finish(record, f"Test FW flash failed: {err}", cleanup=False)
+            handle_flash_failure(board_num, err)
             return
         set_board_test_flashed(board_num, True)
 
@@ -1711,62 +1794,111 @@ def run_board_stage(board_num, profile):
             return
 
     def on_before_current_meas():
-        # Wait for any flashing on other boards (e.g. client flashing on previous board)
-        wait_all_flashing_except(board_num)
-        # Power isolation: ONLY board_num is ON
-        isolate_board_power(board_num)
-        set_board_routing(board_num)
+        _measuring_active.set()
+        try:
+            # Wait for any flashing on other boards (e.g. client flashing on previous board)
+            wait_all_flashing_except(board_num)
+            # Power isolation: ONLY board_num is ON
+            isolate_board_power(board_num)
+            set_board_routing(board_num)
+        except Exception as e:
+            print(f"[power] on_before_current_meas error: {e}")
 
     try:
         message = asyncio.run(_ble_stage(mac, bench, record, measure_rssi=USE_BUMBLE, on_before_current_meas=on_before_current_meas))
     except Exception as error:
         message = f"BLE stage fault: {error}"
+    finally:
+        _measuring_active.clear()
 
     if message:
         finish(record, message, cleanup=False)
         pin_set(PIN_PWR[board_num], False)
+        set_board_test_flashed(board_num, False)
         return
 
     # All functional and power tests passed!
     print(f"[board {board_num}] All tests passed! Starting client firmware flash in background...")
     start_background_flash_client(board_num, record)
 
-    # Immediately turn ON all boards (pinctrl set 13,26,27 op dh) to utilize gap while client firmware flashes
-    power_all_boards(True)
-    detect_and_flash_untested_boards()
-
-def run_round_robin(profile):
-    """Executes the optimized 3-board overlapped round-robin test.
-    Utilizes client firmware flashing time to turn ON all boards and flash
-    untested boards in parallel.
+def run_fcfs_stream(profile, once=False):
+    """Executes FCFS continuous or single-pass multi-board testing.
+    Boards that finish test firmware flashing first are tested first.
+    Simultaneous completions follow lower board number (1 < 2 < 3).
     """
     print("\n" + "=" * 62)
-    print("  NEO 3-BOARD OVERLAPPED ROUND-ROBIN STARTING")
+    print(f"  NEO FCFS {'ONE-SHOT' if once else 'CONTINUOUS'} STREAM STARTING")
     print("=" * 62)
     print_tracking_state()
 
-    # 1. Turn ON all boards: pinctrl set 13,26,27 op dh
+    # Initial detection pass
     power_all_boards(True)
     time.sleep(0.3)
+    batch_t0 = time.monotonic()
+    detect_and_flash_untested_boards(batch_t0)
 
-    # 2. Pre-detect and parallel flash test firmware on all untested sockets
-    detect_and_flash_untested_boards()
+    tracked_once = set()
+    if once:
+        with _state_lock:
+            for b in [1, 2, 3]:
+                mac = socket_state[b]["mac"]
+                if mac and jig_db.check_mac_passed(mac) != "PASS":
+                    tracked_once.add(b)
+        if not tracked_once:
+            print("[fcfs] No untested boards detected for one-shot run.")
+            wait_all_flashing()
+            clean_all_pins()
+            return
 
-    # 3. Test each socket sequentially with overlapped flashing
-    for b_num in [1, 2, 3]:
-        if stop_event.is_set():
-            break
-        run_board_stage(b_num, profile)
+    last_scan = time.monotonic()
+    SCAN_INTERVAL_S = 1.5
 
-    # 4. Wait for all background flashing to complete (e.g. Board 3 client flash)
+    while not stop_event.is_set():
+        now = time.monotonic()
+        if now - last_scan >= SCAN_INTERVAL_S and not _measuring_active.is_set():
+            last_scan = now
+            detect_and_flash_untested_boards()
+
+        try:
+            ready_item = ready_queue.get(timeout=0.3)
+        except queue.Empty:
+            ready_item = None
+
+        if ready_item is not None:
+            ready_time, b_num = ready_item
+            with _state_lock:
+                socket_state[b_num]["in_queue"] = False
+                socket_state[b_num]["is_testing"] = True
+
+            try:
+                print(f"\n[fcfs] -> Dispatching Board {b_num} (ready at t={ready_time:.2f})")
+                run_board_stage(b_num, profile)
+            finally:
+                with _state_lock:
+                    socket_state[b_num]["is_testing"] = False
+                ready_queue.task_done()
+                if once:
+                    tracked_once.discard(b_num)
+
+        if once:
+            with _state_lock:
+                for b in list(tracked_once):
+                    if socket_state[b]["flash_permanently_failed"]:
+                        tracked_once.discard(b)
+            if not tracked_once and ready_queue.empty():
+                print("[fcfs] All boards for one-shot run completed.")
+                break
+
     wait_all_flashing()
-
-    # 5. Clean all pins and print final state
     clean_all_pins()
     print_tracking_state()
     print("=" * 62)
-    print("  NEO 3-BOARD ROUND-ROBIN COMPLETED")
+    print("  NEO FCFS STREAM COMPLETED")
     print("=" * 62)
+
+def run_round_robin(profile):
+    """Backward compatibility wrapper for FCFS test pipeline."""
+    run_fcfs_stream(profile, once=True)
 
 
 
@@ -1793,16 +1925,16 @@ def watch_buttons(profile, target_board=1):
             busy.set()
             stop_event.clear()
 
-            print("\n[mode] MULTI-BOARD: Overlapped Round-Robin testing Sockets 1, 2, and 3")
+            print("\n[mode] MULTI-BOARD: FCFS Continuous testing Sockets 1, 2, and 3")
 
             def _run():
                 try:
-                    while not stop_event.is_set():
-                        if target_board and target_board != 1:
+                    if target_board and target_board != 1:
+                        while not stop_event.is_set():
                             run_cycle(target_board, profile)
-                        else:
-                            run_round_robin(profile)
-                        time.sleep(0.5)
+                            time.sleep(0.5)
+                    else:
+                        run_fcfs_stream(profile, once=False)
                 finally:
                     wait_all_flashing()
                     clean_all_pins()
@@ -1937,13 +2069,13 @@ def main():
                 print(f"\n[mode] ONE-SHOT: Testing Socket {args.board}")
                 run_cycle(args.board, args.profile)
             else:
-                print("\n[mode] ONE-SHOT MULTI: Overlapped round-robin testing Sockets 1, 2, and 3 once")
-                run_round_robin(args.profile)
+                print("\n[mode] ONE-SHOT MULTI: FCFS testing Sockets 1, 2, and 3 once")
+                run_fcfs_stream(args.profile, once=True)
             clean_all_pins()
-        # --- CONTINUOUS AUTO BLOCK (Round-Robin ON all the time) ---
+        # --- CONTINUOUS AUTO BLOCK (FCFS Priority Preemption ON all the time) ---
         elif not USE_BUTTONS:
             clean_all_pins()
-            print("\n[mode] AUTO: Running continuously with Overlapped Round-Robin ON all the time.")
+            print("\n[mode] AUTO: Running continuously with FCFS priority preemption ON all the time.")
             if args.board:
                 print(f"[mode] Single-socket override: Socket {args.board}")
                 while not stop_event.is_set():
@@ -1954,14 +2086,9 @@ def main():
                         time.sleep(0.1)
                         waited += 0.1
             else:
-                print("[mode] Overlapped Round-robin testing Sockets 1, 2, and 3 continuously")
-                while not stop_event.is_set():
-                    run_round_robin(args.profile)
-                    clean_all_pins()
-                    waited = 0.0
-                    while waited < 1.0 and not stop_event.is_set():
-                        time.sleep(0.1)
-                        waited += 0.1
+                print("[mode] FCFS continuous testing Sockets 1, 2, and 3")
+                run_fcfs_stream(args.profile, once=False)
+                clean_all_pins()
         # --------------------------------
         # --------------------------------
         
