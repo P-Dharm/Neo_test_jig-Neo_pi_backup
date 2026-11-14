@@ -702,15 +702,7 @@ class BumbleClient:
 
         def on_advertisement(adv):
             adv_str = str(adv.address).upper().replace("-", ":")
-            matched = (target in adv_str)
-            if not matched and BLE_NAME and hasattr(adv, 'data') and adv.data:
-                try:
-                    adv_name = adv.data.get(adv.data.COMPLETE_LOCAL_NAME, "") or adv.data.get(adv.data.SHORTENED_LOCAL_NAME, "")
-                    if BLE_NAME.upper() in str(adv_name).upper():
-                        matched = True
-                except Exception:
-                    pass
-            if matched:
+            if target in adv_str:
                 self.target_address_obj = adv.address
                 rssi_values.append(adv.rssi)
                 if len(rssi_values) >= count:
