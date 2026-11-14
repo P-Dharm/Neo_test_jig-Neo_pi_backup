@@ -326,14 +326,19 @@ def power_all_boards(high=True):
 
 def isolate_board_power(board_num):
     """Power ON only the selected board, and power OFF all other boards.
-    Required for any current measurement tests (pinctrl set 13 op dh and all other dl).
+    Required for any current measurement tests.
+    Does NOT re-apply pin_set to board_num if already powered ON to prevent glitching/resets.
     """
     if board_num not in PIN_PWR:
         raise ValueError(f"Invalid board number: {board_num}")
     for b, pin in PIN_PWR.items():
-        pin_set(pin, (b == board_num))
-    time.sleep(0.1)
-    print(f"[gpio] Board {board_num} power ISOLATED: GPIO{PIN_PWR[board_num]}=HIGH, other boards=LOW")
+        if b != board_num:
+            pin_set(pin, False)
+    target_pin = PIN_PWR[board_num]
+    if not pin_get(target_pin):
+        pin_set(target_pin, True)
+    time.sleep(0.05)
+    print(f"[gpio] Board {board_num} power ISOLATED: GPIO{target_pin}=HIGH, other boards=LOW")
 
 def set_board_routing(board_num):
     """Configure GPIO 11 and GPIO 22 routing for the selected board without modifying board power lines."""
@@ -1198,7 +1203,7 @@ async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_m
             record["imu_acctest"] = "PASS" if ok else f"FAIL ({detail})"
             print(f"        {response}")
             if not ok: return f"IMU: {detail}"
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             record["imu_acctest"] = "FAIL"
             return f"IMU Timeout/Error: {e}"
 
@@ -1212,7 +1217,7 @@ async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_m
             stimulus_raw = await capture_once(session, CAPTURE_MS, 60.0, stimulus, ALSA_DEVICE, STIMULUS_LEAD)
             print("        capturing silence...")
             silence_raw = await capture_once(session, CAPTURE_MS, 60.0, None, ALSA_DEVICE)
-        except Exception as error:
+        except (Exception, asyncio.CancelledError) as error:
             record["mic_result"] = "FAIL"
             return f"Mic Capture: {error}"
 
@@ -1268,7 +1273,7 @@ async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_m
             print(f"        V_charging: {record['V_charging']}V")
             if not check_window(row["current_ma"], ACTIVE_LIMITS):
                 return f"Active Stream {row['current_ma']:.4f} mA out of bounds [{ACTIVE_LIMITS[0]:.2f} - {ACTIVE_LIMITS[1]:.2f} mA]"
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             return f"Active Stream Error: {e}"
 
         # 5. ACTIVE CURRENT (QUIET)
@@ -1318,7 +1323,7 @@ async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_m
             record["led_delta_ma"] = round(delta, 4)
             print(f"        Delta {delta:.4f} mA")
             if not check_window(delta, LED_DELTA_LIMITS): return f"LED delta {delta:.4f} mA out of bounds"
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             return f"LED Test Error: {e}"
 
         # 6b. AMBER LED VERIFICATION
@@ -1339,7 +1344,7 @@ async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_m
             record["amber_led_delta_ma"] = round(amber_delta, 4)
             print(f"        Amber Delta {amber_delta:.4f} mA")
             if not check_window(amber_delta, AMBER_LED_DELTA_LIMITS): return f"Amber LED delta {amber_delta:.4f} mA out of bounds"
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             return f"Amber LED Test Error: {e}"
 
         # 7. SLEEP CURRENT
@@ -1366,7 +1371,7 @@ async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_m
                 return f"Sleep: {row['current_ma']:.4f} mA looks like active."
             if not check_window(row["current_ma"], SLEEP_LIMITS):
                 return f"Sleep {row['current_ma']:.4f} mA out of bounds [{SLEEP_LIMITS[0]:.4f} - {SLEEP_LIMITS[1]:.4f} mA]"
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             return f"Sleep Test Error: {e}"
 
         return ""
@@ -1800,13 +1805,12 @@ def run_board_stage(board_num, profile):
             wait_all_flashing_except(board_num)
             # Power isolation: ONLY board_num is ON
             isolate_board_power(board_num)
-            set_board_routing(board_num)
         except Exception as e:
             print(f"[power] on_before_current_meas error: {e}")
 
     try:
         message = asyncio.run(_ble_stage(mac, bench, record, measure_rssi=USE_BUMBLE, on_before_current_meas=on_before_current_meas))
-    except Exception as error:
+    except (Exception, asyncio.CancelledError) as error:
         message = f"BLE stage fault: {error}"
     finally:
         _measuring_active.clear()
@@ -1873,6 +1877,8 @@ def run_fcfs_stream(profile, once=False):
             try:
                 print(f"\n[fcfs] -> Dispatching Board {b_num} (ready at t={ready_time:.2f})")
                 run_board_stage(b_num, profile)
+            except (Exception, asyncio.CancelledError) as e:
+                print(f"[fcfs] Error during Board {b_num} testing: {e}")
             finally:
                 with _state_lock:
                     socket_state[b_num]["is_testing"] = False
