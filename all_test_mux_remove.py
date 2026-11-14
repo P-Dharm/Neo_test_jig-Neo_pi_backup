@@ -284,7 +284,7 @@ POST_TIMEOUT = 15
 SHEET_TAB = "NEO TEST"
 
 # ── Supabase Online SQL Push Option ────────────────────────────────────────
-ENABLE_SUPABASE = True   # Set to True for online Supabase sync; False to disable Supabase push
+ENABLE_SUPABASE = False   # Set to True for online Supabase sync; False to disable Supabase push
 jig_db.ENABLE_SUPABASE = ENABLE_SUPABASE
 
 NA = "NA"
