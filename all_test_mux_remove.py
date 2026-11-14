@@ -154,9 +154,9 @@ _state_lock = threading.Lock()
 _measuring_active = threading.Event()
 
 socket_state = {
-    1: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False},
-    2: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False},
-    3: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False},
+    1: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False, "already_passed": False},
+    2: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False, "already_passed": False},
+    3: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False, "already_passed": False},
 }
 
 test_firmware_flash_b1 = False
@@ -392,9 +392,14 @@ def post_once(payload, quiet=False):
 #  DATABASE LOGGING (Offline SQLite + Online Supabase Sync)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def check_mac_result_db(mac):
+def check_mac_result_db(mac, raw_mac=None):
     """Queries local SQLite database to check if this module MAC already passed."""
-    return jig_db.check_mac_passed(mac)
+    if not mac and not raw_mac:
+        return None
+    res = jig_db.check_mac_passed(mac) if mac else None
+    if res != "PASS" and raw_mac:
+        res = jig_db.check_mac_passed(raw_mac)
+    return res
 
 check_mac_result_csv = check_mac_result_db  # Backward compatibility alias
 
@@ -1415,8 +1420,8 @@ def run_cycle(board_num, profile):
     record["ficr_mac"] = raw_mac
 
     # 2. Skip Check via Database
-    if jig_db.check_mac_passed(mac) == "PASS":
-        print(f"[skip] {mac} already passed, not re-testing")
+    if jig_db.check_mac_passed(mac) == "PASS" or (raw_mac and jig_db.check_mac_passed(raw_mac) == "PASS"):
+        print(f"[skip] Socket {board_num}: MAC {mac} is already passed in database, skipping test.")
         clean_all_pins()
         return True
 
@@ -1662,6 +1667,7 @@ def detect_and_flash_untested_boards(batch_time=None):
                 socket_state[b]["flash_retry_count"] = 0
                 socket_state[b]["flash_permanently_failed"] = False
                 socket_state[b]["in_queue"] = False
+                socket_state[b]["already_passed"] = False
                 if not mac:
                     pin_set(PIN_PWR[b], False)
                     continue
@@ -1684,6 +1690,7 @@ def detect_and_flash_untested_boards(batch_time=None):
             socket_state[b]["flash_retry_count"] = 0
             socket_state[b]["flash_permanently_failed"] = False
             socket_state[b]["in_queue"] = False
+            socket_state[b]["already_passed"] = False
             pin_set(PIN_PWR[b], False)
             continue
 
@@ -1695,10 +1702,14 @@ def detect_and_flash_untested_boards(batch_time=None):
             socket_state[b]["flash_retry_count"] = 0
             socket_state[b]["flash_permanently_failed"] = False
             socket_state[b]["in_queue"] = False
+            socket_state[b]["already_passed"] = False
         else:
             set_board_ficr(b, mac)
 
-        if jig_db.check_mac_passed(mac) == "PASS":
+        if jig_db.check_mac_passed(mac) == "PASS" or (raw_mac and jig_db.check_mac_passed(raw_mac) == "PASS"):
+            if not socket_state[b].get("already_passed"):
+                socket_state[b]["already_passed"] = True
+                print(f"[skip] Socket {b}: MAC {mac} is already passed in database, skipping test.")
             pin_set(PIN_PWR[b], False)
             continue
 
@@ -1719,16 +1730,18 @@ def run_board_stage(board_num, profile):
     print("=" * 62)
 
     mac = get_board_ficr(board_num)
+    raw_mac = socket_state[board_num].get("raw_mac")
     if not mac:
         mac, raw_mac, _ = read_ficr_mac(board_num)
         if mac:
             set_board_ficr(board_num, mac)
+            socket_state[board_num]["raw_mac"] = raw_mac
         else:
             print(f"[board {board_num}] No module detected in socket {board_num}. Skipping.")
             return
 
-    if jig_db.check_mac_passed(mac) == "PASS":
-        print(f"[board {board_num}] {mac} already passed in DB. Skipping.")
+    if jig_db.check_mac_passed(mac) == "PASS" or (raw_mac and jig_db.check_mac_passed(raw_mac) == "PASS"):
+        print(f"[skip] Socket {board_num}: MAC {mac} is already passed in database, skipping test.")
         return
 
     # Wait for test firmware flash if actively flashing
@@ -1838,7 +1851,8 @@ def run_fcfs_stream(profile, once=False):
         with _state_lock:
             for b in [1, 2, 3]:
                 mac = socket_state[b]["mac"]
-                if mac and jig_db.check_mac_passed(mac) != "PASS":
+                raw_mac = socket_state[b].get("raw_mac")
+                if mac and not (jig_db.check_mac_passed(mac) == "PASS" or (raw_mac and jig_db.check_mac_passed(raw_mac) == "PASS")):
                     tracked_once.add(b)
         if not tracked_once:
             print("[fcfs] No untested boards detected for one-shot run.")
