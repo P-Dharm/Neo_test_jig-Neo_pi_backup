@@ -429,6 +429,7 @@ def read_ficr_mac(board_num=1):
         f"-c", f"mdw {hex(FICR_DEVICEADDRTYPE)} 1",
         f"-c", f"mdw {hex(FICR_DEVICEADDR0)} 1",
         f"-c", f"mdw {hex(FICR_DEVICEADDR1)} 1",
+        "-c", "resume",
         "-c", "shutdown",
     ]
     code, output = _openocd(board_num, extra, 20)
@@ -562,11 +563,16 @@ _load_gatt_cache()
 
 
 def reset_hci(adapter_index=0):
-    """Silently forces the adapter DOWN so Bumble can claim it."""
+    """Resets the Bluetooth controller and forces the adapter DOWN so Bumble can claim it."""
+    try:
+        subprocess.run(["hciconfig", f"hci{adapter_index}", "reset"], capture_output=True, timeout=2)
+    except Exception:
+        pass
     try:
         subprocess.run(["hciconfig", f"hci{adapter_index}", "down"], capture_output=True, timeout=2)
     except Exception:
         pass
+    time.sleep(0.15)
 
 
 def _restore_hci_up(adapter_index=0):
@@ -652,7 +658,16 @@ class BumbleClient:
         target = self.target_address.strip().upper().replace("-", ":")
 
         def on_advertisement(adv):
-            if target in str(adv.address).upper():
+            adv_str = str(adv.address).upper().replace("-", ":")
+            matched = (target in adv_str)
+            if not matched and BLE_NAME and hasattr(adv, 'data') and adv.data:
+                try:
+                    adv_name = adv.data.get(adv.data.COMPLETE_LOCAL_NAME, "") or adv.data.get(adv.data.SHORTENED_LOCAL_NAME, "")
+                    if BLE_NAME.upper() in str(adv_name).upper():
+                        matched = True
+                except Exception:
+                    pass
+            if matched:
                 self.target_address_obj = adv.address
                 rssi_values.append(adv.rssi)
                 if len(rssi_values) >= count:
@@ -1093,6 +1108,12 @@ async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_m
             print(f"[rssi] scanning on {BLE_ADAPTER} (Bumble)...")
             rssi, rssi_err = await client.scan_rssi(count=RSSI_COUNT, timeout=RSSI_SCAN_TIMEOUT)
             if rssi_err:
+                print(f"[rssi] First scan failed ({rssi_err}), resetting HCI and retrying...")
+                await client.close()
+                await asyncio.sleep(0.5)
+                client = BumbleClient(mac, adapter=BLE_ADAPTER, timeout=CONNECT_TIMEOUT)
+                rssi, rssi_err = await client.scan_rssi(count=RSSI_COUNT, timeout=RSSI_SCAN_TIMEOUT)
+            if rssi_err:
                 record["ble"] = "FAIL"
                 return f"RSSI: {rssi_err}"
             record["rssi_dbm"] = rssi
@@ -1529,6 +1550,8 @@ def start_background_flash_client(board_num, record):
                 record["result"] = "FAIL"
                 print(f"[flash-bg] <- Board {board_num} CLIENT firmware flash FAILED: {err} [FAIL]")
                 finish(record, err, cleanup=False)
+            # Turn power OFF to this board now that client flashing is done
+            pin_set(PIN_PWR[board_num], False)
             info["done_event"].set()
 
         t = threading.Thread(target=_worker, name=f"flash_client_b{board_num}", daemon=True)
@@ -1641,14 +1664,25 @@ def run_board_stage(board_num, profile):
             finish(record, f"Test FW flash failed: {err}", cleanup=False)
             return
         set_board_test_flashed(board_num, True)
-        pin_set(PIN_PWR[board_num], False)
-        time.sleep(0.3)
-        pin_set(PIN_PWR[board_num], True)
-        time.sleep(POST_FLASH_REBOOT_S)
 
-    # Route hardware to this board and ensure it is powered ON
-    set_board_routing(board_num)
+    # Power setup for testing board_num:
+    # 1. Turn OFF any board that is NOT actively flashing in background
+    with _flash_threads_lock:
+        active_flashing_boards = [b for b, info in _flash_threads.items()
+                                  if b != board_num and info["thread"] and info["thread"].is_alive()]
+    for b, pin in PIN_PWR.items():
+        if b != board_num and b not in active_flashing_boards:
+            pin_set(pin, False)
+
+    # 2. ALWAYS power-cycle the target board so it boots cleanly into test firmware
+    print(f"[power] Rebooting Board {board_num} into test firmware...")
+    pin_set(PIN_PWR[board_num], False)
+    time.sleep(0.3)
     pin_set(PIN_PWR[board_num], True)
+    time.sleep(POST_FLASH_REBOOT_S)
+
+    # 3. Route hardware to this board
+    set_board_routing(board_num)
 
     record = blank_record()
     record["mac"] = mac
@@ -1690,7 +1724,7 @@ def run_board_stage(board_num, profile):
 
     if message:
         finish(record, message, cleanup=False)
-        power_all_boards(True)
+        pin_set(PIN_PWR[board_num], False)
         return
 
     # All functional and power tests passed!
