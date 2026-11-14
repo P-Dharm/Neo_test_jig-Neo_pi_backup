@@ -188,9 +188,9 @@ def check_mac_passed(mac: str) -> Optional[str]:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT result FROM test_results
-                WHERE UPPER(mac) = ? AND UPPER(result) = 'PASS'
+                WHERE (UPPER(mac) = ? OR UPPER(ficr_mac) = ?) AND UPPER(result) = 'PASS'
                 LIMIT 1;
-            """, (mac_clean,))
+            """, (mac_clean, mac_clean))
             row = cursor.fetchone()
             return "PASS" if row else None
         except Exception as err:

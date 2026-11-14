@@ -140,6 +140,49 @@ CMSIS_DAP_VID_PID = {
     2: "0x2fe3 0x0200",
     3: "0x2fe3 0x0204",
 }
+CMSIS_DAP_SERIAL = {
+    1: "4DA6E205F220EC8E",
+    2: "E2E5D9AED9D33D64",
+    3: "E35E8B7E733FD598",
+}
+
+# ── Per-Socket State Tracking (6 Round Variables) ──────────────────────────
+test_firmware_flash_b1 = False
+FICR_b1 = None
+test_firmware_flash_b2 = False
+FICR_b2 = None
+test_firmware_flash_b3 = False
+FICR_b3 = None
+
+def get_board_ficr(board_num):
+    if board_num == 1: return FICR_b1
+    if board_num == 2: return FICR_b2
+    if board_num == 3: return FICR_b3
+    return None
+
+def set_board_ficr(board_num, value):
+    global FICR_b1, FICR_b2, FICR_b3
+    if board_num == 1: FICR_b1 = value
+    elif board_num == 2: FICR_b2 = value
+    elif board_num == 3: FICR_b3 = value
+
+def get_board_test_flashed(board_num):
+    if board_num == 1: return test_firmware_flash_b1
+    if board_num == 2: return test_firmware_flash_b2
+    if board_num == 3: return test_firmware_flash_b3
+    return False
+
+def set_board_test_flashed(board_num, value):
+    global test_firmware_flash_b1, test_firmware_flash_b2, test_firmware_flash_b3
+    if board_num == 1: test_firmware_flash_b1 = bool(value)
+    elif board_num == 2: test_firmware_flash_b2 = bool(value)
+    elif board_num == 3: test_firmware_flash_b3 = bool(value)
+
+def print_tracking_state():
+    print(f"[state] B1: FICR={FICR_b1}, Flashed={test_firmware_flash_b1} | "
+          f"B2: FICR={FICR_b2}, Flashed={test_firmware_flash_b2} | "
+          f"B3: FICR={FICR_b3}, Flashed={test_firmware_flash_b3}")
+
 FLASH_ATTEMPTS = 3
 FLASH_TIMEOUT = 120
 FLASH_RETRY_PAUSE = 2.0
@@ -231,42 +274,53 @@ def pin_get(gpio):
     except Exception:
         return False
 
+def power_all_boards(high=True):
+    """Turns power ON (dh) or OFF (dl) to all boards simultaneously (pinctrl set 13,26,27 op dh/dl)."""
+    try:
+        subprocess.run(["pinctrl", "set", "13,26,27", "op", "dh" if high else "dl"],
+                       capture_output=True, timeout=2)
+    except Exception as error:
+        print(f"[gpio] power_all_boards failed: {error}")
+        for p_pin in PIN_PWR.values():
+            pin_set(p_pin, high)
+    time.sleep(0.2 if high else 0.05)
+    print(f"[gpio] All boards power set to {'HIGH (ON)' if high else 'LOW (OFF)'}")
+
+def isolate_board_power(board_num):
+    """Power ON only the selected board, and power OFF all other boards.
+    Required for any current measurement tests (pinctrl set 13 op dh and all other dl).
+    """
+    if board_num not in PIN_PWR:
+        raise ValueError(f"Invalid board number: {board_num}")
+    for b, pin in PIN_PWR.items():
+        pin_set(pin, (b == board_num))
+    time.sleep(0.1)
+    print(f"[gpio] Board {board_num} power ISOLATED: GPIO{PIN_PWR[board_num]}=HIGH, other boards=LOW")
+
+def set_board_routing(board_num):
+    """Configure GPIO 11 and GPIO 22 routing for the selected board without modifying board power lines."""
+    if board_num not in BOARD_ROUTE:
+        raise ValueError(f"Invalid board number: {board_num}")
+    for gpio, state in BOARD_ROUTE[board_num].items():
+        pin_set(gpio, state)
+    time.sleep(0.05)
+    print(
+        f"[gpio] Board {board_num} routed | "
+        f"GPIO11={'HIGH' if BOARD_ROUTE[board_num][11] else 'LOW'} | "
+        f"GPIO22={'HIGH' if BOARD_ROUTE[board_num][22] else 'LOW'}"
+    )
+
 def route_hardware(board_num):
     """Configure board-selection routing, then power ON only that board."""
     if board_num not in PIN_PWR:
         raise ValueError(f"Invalid board number: {board_num}")
 
-    # First, ensure every board power output is OFF.
-    for p_pin in PIN_PWR.values():
-        pin_set(p_pin, False)
-
-    # Set a known LOW state before applying the selected board's routing.
-    pin_set(11, False)
-    pin_set(22, False)
-    time.sleep(0.1)
-
-    # Configure GPIO 11 and GPIO 22 for the selected board.
-    for gpio, state in BOARD_ROUTE[board_num].items():
-        pin_set(gpio, state)
-    time.sleep(0.1)
-
-    # Power ON only the selected board after routing is configured.
-    pin_set(PIN_PWR[board_num], True)
-    time.sleep(0.5)
-
-    print(
-        f"[gpio] Board {board_num} selected | "
-        f"GPIO11={'HIGH' if BOARD_ROUTE[board_num][11] else 'LOW'} | "
-        f"GPIO22={'HIGH' if BOARD_ROUTE[board_num][22] else 'LOW'} | "
-        f"POWER GPIO{PIN_PWR[board_num]}=HIGH"
-    )
+    set_board_routing(board_num)
+    isolate_board_power(board_num)
 
 def clean_all_pins():
     """Turn OFF all board power outputs and reset routing GPIOs to LOW."""
-    # Remove board power before changing the routing lines.
-    for p_pin in PIN_PWR.values():
-        pin_set(p_pin, False)
-
+    power_all_boards(False)
     pin_set(11, False)
     pin_set(22, False)
 
@@ -327,14 +381,19 @@ _MDW_RE = re.compile(r"(0x[0-9a-fA-F]+):\s*([0-9a-fA-F]{8})")
 def openocd_base_cmd(board_num=1):
     """Builds base OpenOCD command using CMSIS-DAP for the specified board socket."""
     vid_pid = CMSIS_DAP_VID_PID.get(board_num, CMSIS_DAP_VID_PID[1])
+    serial = CMSIS_DAP_SERIAL.get(board_num, CMSIS_DAP_SERIAL[1])
     return [
         OPENOCD_BIN,
         "-s", OPENOCD_TCL,
         "-f", "interface/cmsis-dap.cfg",
         "-c", "cmsis-dap backend usb_bulk",
         "-c", f"cmsis-dap vid_pid {vid_pid}",
+        "-c", f"cmsis_dap_serial {serial}",
         "-c", "transport select swd",
         "-c", "adapter speed 1000",
+        "-c", "gdb_port disabled",
+        "-c", "telnet_port disabled",
+        "-c", "tcl_port disabled",
         "-f", "target/nordic/nrf52.cfg",
     ]
 
@@ -420,7 +479,8 @@ def read_ficr_mac(board_num=1):
 def flash_hex(arg1, arg2, arg3=None):
     """Flashes firmware using CMSIS-DAP.
     Can be called as flash_hex(board_num, path, label) or flash_hex(path, label).
-    Runs nrf52_recover first to unlock/erase, then programs and verifies the hex image.
+    First attempts direct programming. If that fails or chip is locked, performs
+    nrf52_recover and retries programming.
     """
     if isinstance(arg1, int):
         board_num = arg1
@@ -435,28 +495,36 @@ def flash_hex(arg1, arg2, arg3=None):
         return False, f"{label} firmware not found: {path}"
 
     output = ""
+    prog_args = ["-c", f"program {path} verify reset exit"]
     for attempt in range(1, FLASH_ATTEMPTS + 1):
         if stop_event.is_set():
             return False, "stopped"
 
-        # 1. Recover device (clears locks, erases flash)
+        # Attempt direct program first (saves ~2-3s when unlocked)
+        code, output = _openocd(board_num, prog_args, FLASH_TIMEOUT)
+        if VERBOSE:
+            print(f"[flash b{board_num}] attempt {attempt} code {code}:\n{output}")
+
+        if "verified" in output.lower():
+            return True, ""
+
+        print(f"[flash] {label} direct program attempt {attempt} failed on board {board_num}, recovering chip...")
         rec_ok, rec_out = recover_chip(board_num)
         if not rec_ok:
             print(f"[flash] {label} recover attempt {attempt} failed on board {board_num}")
-            if VERBOSE: print(rec_out)
+            if VERBOSE:
+                print(rec_out)
 
-        # 2. Program firmware with verify and reset exit
-        prog_args = [
-            "-c", f"program {path} verify reset exit"
-        ]
+        # Retry programming after recover
         code, output = _openocd(board_num, prog_args, FLASH_TIMEOUT)
-        if VERBOSE: print(output)
+        if VERBOSE:
+            print(f"[flash b{board_num}] post-recover attempt {attempt} code {code}:\n{output}")
 
         if "verified" in output.lower():
             return True, ""
 
         if attempt < FLASH_ATTEMPTS:
-            print(f"[flash] {label} attempt {attempt} failed on board {board_num}, retrying")
+            print(f"[flash] {label} attempt {attempt} failed on board {board_num}, retrying in {FLASH_RETRY_PAUSE}s")
             time.sleep(FLASH_RETRY_PAUSE)
 
     tail = [line for line in output.splitlines() if line.strip()][-4:]
@@ -1014,7 +1082,7 @@ def check_window(value, window):
 #  THE TEST STAGES
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def _ble_stage(mac, bench, record, measure_rssi=False):
+async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_meas=None):
     """Executes the complete connection, IMU, Mic, LED, and Power sequence."""
     client = None
     session = None
@@ -1109,6 +1177,13 @@ async def _ble_stage(mac, bench, record, measure_rssi=False):
         # record["mic_result"] = "SKIPPED"
         # record["mic_thd_pct"] = "NA"
         # record["mic_snr_db"] = "NA"
+
+        # Ensure single-board power isolation before any current measurement
+        if on_before_current_meas:
+            if asyncio.iscoroutinefunction(on_before_current_meas):
+                await on_before_current_meas()
+            else:
+                await asyncio.to_thread(on_before_current_meas)
 
         # 4. ACTIVE CURRENT (STREAMING)
         print("  [test] active mode + streaming current...")
@@ -1350,8 +1425,9 @@ def run_cycle(board_num, profile):
     return True
 
 
-def finish(record, comment):
-    clean_all_pins()
+def finish(record, comment, cleanup=False):
+    if cleanup:
+        clean_all_pins()
     record["timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     record["comments"] = comment
     if comment:
@@ -1370,6 +1446,294 @@ def finish(record, comment):
     except Exception as error:
         print(f"[db] could not save to database: {error}")
         return
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  PARALLEL / BACKGROUND FLASHING MANAGER & OVERLAPPED PIPELINE
+# ══════════════════════════════════════════════════════════════════════════════
+
+_flash_threads = {}
+_flash_threads_lock = threading.Lock()
+
+def start_background_flash_test(board_num):
+    """Spawns a background thread to flash test firmware on board_num."""
+    with _flash_threads_lock:
+        existing = _flash_threads.get(board_num)
+        if existing and existing["thread"].is_alive():
+            print(f"[flash-bg] Board {board_num} is already flashing ({existing['type']}).")
+            return existing
+
+        info = {
+            "board_num": board_num,
+            "type": "test",
+            "thread": None,
+            "success": False,
+            "error": "",
+            "done_event": threading.Event()
+        }
+
+        def _worker():
+            print(f"[flash-bg] -> Starting test firmware flash for Board {board_num}...")
+            ok, err = flash_hex(board_num, TEST_HEX, "test")
+            info["success"] = ok
+            info["error"] = err
+            if ok:
+                set_board_test_flashed(board_num, True)
+                print(f"[flash-bg] <- Board {board_num} test firmware FLASHED successfully! Rebooting board...")
+                pin_set(PIN_PWR[board_num], False)
+                time.sleep(0.3)
+                pin_set(PIN_PWR[board_num], True)
+                time.sleep(POST_FLASH_REBOOT_S)
+            else:
+                set_board_test_flashed(board_num, False)
+                print(f"[flash-bg] <- Board {board_num} test firmware flash FAILED: {err}")
+            info["done_event"].set()
+
+        t = threading.Thread(target=_worker, name=f"flash_test_b{board_num}", daemon=True)
+        info["thread"] = t
+        _flash_threads[board_num] = info
+        t.start()
+        return info
+
+def start_background_flash_client(board_num, record):
+    """Spawns a background thread to flash client firmware on board_num and record result."""
+    with _flash_threads_lock:
+        existing = _flash_threads.get(board_num)
+        if existing and existing["thread"].is_alive():
+            print(f"[flash-bg] Waiting for active flash on Board {board_num} before starting client flash...")
+            existing["thread"].join()
+
+        info = {
+            "board_num": board_num,
+            "type": "client",
+            "thread": None,
+            "success": False,
+            "error": "",
+            "record": record,
+            "done_event": threading.Event()
+        }
+
+        def _worker():
+            print(f"[flash-bg] -> Starting CLIENT firmware flash for Board {board_num}...")
+            ok, err = flash_hex(board_num, CLIENT_HEX, "client")
+            info["success"] = ok
+            info["error"] = err
+            if ok:
+                record["client_firmware"] = "PASS"
+                record["result"] = "PASS"
+                set_board_test_flashed(board_num, False)
+                print(f"[flash-bg] <- Board {board_num} CLIENT firmware FLASHED successfully! [PASS]")
+                finish(record, "", cleanup=False)
+            else:
+                record["client_firmware"] = "FAIL"
+                record["result"] = "FAIL"
+                print(f"[flash-bg] <- Board {board_num} CLIENT firmware flash FAILED: {err} [FAIL]")
+                finish(record, err, cleanup=False)
+            info["done_event"].set()
+
+        t = threading.Thread(target=_worker, name=f"flash_client_b{board_num}", daemon=True)
+        info["thread"] = t
+        _flash_threads[board_num] = info
+        t.start()
+        return info
+
+def wait_for_board_flash(board_num, timeout=FLASH_TIMEOUT + 10):
+    """Waits for any background flash on board_num to finish."""
+    with _flash_threads_lock:
+        info = _flash_threads.get(board_num)
+    if info and info["thread"] and info["thread"].is_alive():
+        print(f"[sync] Waiting for Board {board_num} ({info['type']} flashing) to complete...")
+        info["thread"].join(timeout=timeout)
+        return info["success"], info["error"]
+    elif info:
+        return info["success"], info["error"]
+    return True, ""
+
+def wait_all_flashing_except(excluded_board_num, timeout=FLASH_TIMEOUT + 10):
+    """Waits for all active flashing threads except excluded_board_num to finish."""
+    with _flash_threads_lock:
+        boards = [b for b, info in _flash_threads.items()
+                  if b != excluded_board_num and info["thread"] and info["thread"].is_alive()]
+    for b in boards:
+        wait_for_board_flash(b, timeout=timeout)
+
+def wait_all_flashing(timeout=FLASH_TIMEOUT + 10):
+    """Waits for all active flashing threads on all boards to finish."""
+    with _flash_threads_lock:
+        boards = [b for b, info in _flash_threads.items()
+                  if info["thread"] and info["thread"].is_alive()]
+    for b in boards:
+        wait_for_board_flash(b, timeout=timeout)
+
+def detect_and_flash_untested_boards():
+    """Reads FICR MAC on all sockets, updates 6 tracking variables, and launches
+    background test firmware flashing for any untested board not yet in the database.
+    """
+    print("[detect-all] Scanning sockets 1, 2, and 3...")
+    for b in [1, 2, 3]:
+        if stop_event.is_set():
+            break
+
+        with _flash_threads_lock:
+            existing = _flash_threads.get(b)
+            if existing and existing["thread"].is_alive():
+                print(f"[detect-all] Board {b} is actively flashing ({existing['type']}), skipping FICR read.")
+                continue
+
+        mac, raw_mac, err = read_ficr_mac(b)
+        old_ficr = get_board_ficr(b)
+        if not mac:
+            if old_ficr is not None:
+                print(f"[detect-all] Socket {b} now empty (was {old_ficr})")
+            set_board_ficr(b, None)
+            set_board_test_flashed(b, False)
+            continue
+
+        if mac != old_ficr:
+            print(f"[detect-all] Socket {b}: detected new module {mac} (FICR {raw_mac})")
+            set_board_ficr(b, mac)
+            set_board_test_flashed(b, False)
+        else:
+            set_board_ficr(b, mac)
+
+        if jig_db.check_mac_passed(mac) == "PASS":
+            print(f"[detect-all] Socket {b} ({mac}) already PASSED in DB, skipping.")
+            continue
+
+        if not get_board_test_flashed(b):
+            print(f"[detect-all] Socket {b} ({mac}) needs test firmware, launching background flash...")
+            start_background_flash_test(b)
+        else:
+            print(f"[detect-all] Socket {b} ({mac}) already has test firmware flashed.")
+    print_tracking_state()
+
+def run_board_stage(board_num, profile):
+    """Executes the test sequence for board_num within the overlapped round-robin pipeline.
+    Overlaps BLE connect / IMU / Mic test while other boards flash client/test firmware.
+    Ensures power is strictly isolated to board_num when measuring current.
+    """
+    print("\n" + "=" * 62)
+    print(f"  OVERLAPPED STAGE: TESTING BOARD {board_num}")
+    print("=" * 62)
+
+    mac = get_board_ficr(board_num)
+    if not mac:
+        mac, raw_mac, _ = read_ficr_mac(board_num)
+        if mac:
+            set_board_ficr(board_num, mac)
+        else:
+            print(f"[board {board_num}] No module detected in socket {board_num}. Skipping.")
+            return
+
+    if jig_db.check_mac_passed(mac) == "PASS":
+        print(f"[board {board_num}] {mac} already passed in DB. Skipping.")
+        return
+
+    # Wait for test firmware flash if actively flashing
+    wait_for_board_flash(board_num)
+    if not get_board_test_flashed(board_num):
+        print(f"[board {board_num}] Test firmware not yet flashed. Flashing now...")
+        ok, err = flash_hex(board_num, TEST_HEX, "test")
+        if not ok:
+            record = blank_record()
+            record["mac"] = mac
+            record["ficr_mac"] = mac
+            finish(record, f"Test FW flash failed: {err}", cleanup=False)
+            return
+        set_board_test_flashed(board_num, True)
+        pin_set(PIN_PWR[board_num], False)
+        time.sleep(0.3)
+        pin_set(PIN_PWR[board_num], True)
+        time.sleep(POST_FLASH_REBOOT_S)
+
+    # Route hardware to this board and ensure it is powered ON
+    set_board_routing(board_num)
+    pin_set(PIN_PWR[board_num], True)
+
+    record = blank_record()
+    record["mac"] = mac
+    record["ficr_mac"] = mac
+
+    if not EXTERNAL_TESTS_OK:
+        finish(record, "Missing mic_test.py or mic_qc.py dependencies.", cleanup=False)
+        return
+
+    try:
+        bench = Bench(board_num, profile)
+    except Exception as error:
+        finish(record, f"ADC initialization fault: {error}", cleanup=False)
+        return
+
+    if not USE_BUMBLE:
+        rssi, message = scan_rssi(BLE_NAME, mac)
+        if message:
+            record["ble"] = "FAIL"
+            finish(record, f"RSSI: {message}", cleanup=False)
+            return
+        record["rssi_dbm"] = rssi
+        print(f"[rssi] {rssi} dBm")
+        if not check_window(rssi, RSSI_LIMITS):
+            finish(record, f"RSSI {rssi} dBm outside {RSSI_LIMITS}", cleanup=False)
+            return
+
+    def on_before_current_meas():
+        # Wait for any flashing on other boards (e.g. client flashing on previous board)
+        wait_all_flashing_except(board_num)
+        # Power isolation: ONLY board_num is ON
+        isolate_board_power(board_num)
+        set_board_routing(board_num)
+
+    try:
+        message = asyncio.run(_ble_stage(mac, bench, record, measure_rssi=USE_BUMBLE, on_before_current_meas=on_before_current_meas))
+    except Exception as error:
+        message = f"BLE stage fault: {error}"
+
+    if message:
+        finish(record, message, cleanup=False)
+        power_all_boards(True)
+        return
+
+    # All functional and power tests passed!
+    print(f"[board {board_num}] All tests passed! Starting client firmware flash in background...")
+    start_background_flash_client(board_num, record)
+
+    # Immediately turn ON all boards (pinctrl set 13,26,27 op dh) to utilize gap while client firmware flashes
+    power_all_boards(True)
+    detect_and_flash_untested_boards()
+
+def run_round_robin(profile):
+    """Executes the optimized 3-board overlapped round-robin test.
+    Utilizes client firmware flashing time to turn ON all boards and flash
+    untested boards in parallel.
+    """
+    print("\n" + "=" * 62)
+    print("  NEO 3-BOARD OVERLAPPED ROUND-ROBIN STARTING")
+    print("=" * 62)
+    print_tracking_state()
+
+    # 1. Turn ON all boards: pinctrl set 13,26,27 op dh
+    power_all_boards(True)
+    time.sleep(0.3)
+
+    # 2. Pre-detect and parallel flash test firmware on all untested sockets
+    detect_and_flash_untested_boards()
+
+    # 3. Test each socket sequentially with overlapped flashing
+    for b_num in [1, 2, 3]:
+        if stop_event.is_set():
+            break
+        run_board_stage(b_num, profile)
+
+    # 4. Wait for all background flashing to complete (e.g. Board 3 client flash)
+    wait_all_flashing()
+
+    # 5. Clean all pins and print final state
+    clean_all_pins()
+    print_tracking_state()
+    print("=" * 62)
+    print("  NEO 3-BOARD ROUND-ROBIN COMPLETED")
+    print("=" * 62)
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1395,17 +1759,18 @@ def watch_buttons(profile, target_board=1):
             busy.set()
             stop_event.clear()
 
-            print("\n[mode] MULTI-BOARD: Round-robin testing Sockets 1, 2, and 3")
+            print("\n[mode] MULTI-BOARD: Overlapped Round-Robin testing Sockets 1, 2, and 3")
 
             def _run():
                 try:
                     while not stop_event.is_set():
-                        for b_num in [1, 2, 3]:
-                            if stop_event.is_set(): break
-                            run_cycle(b_num, profile)
-                            clean_all_pins()
-                            time.sleep(0.5)
+                        if target_board and target_board != 1:
+                            run_cycle(target_board, profile)
+                        else:
+                            run_round_robin(profile)
+                        time.sleep(0.5)
                 finally:
+                    wait_all_flashing()
                     clean_all_pins()
                     busy.clear()
                     print("\n[buttons] stopped, pins cleaned. Press Start for next run.\n")
@@ -1538,17 +1903,13 @@ def main():
                 print(f"\n[mode] ONE-SHOT: Testing Socket {args.board}")
                 run_cycle(args.board, args.profile)
             else:
-                print("\n[mode] ONE-SHOT MULTI: Round-robin testing Sockets 1, 2, and 3 once")
-                for b_num in [1, 2, 3]:
-                    if stop_event.is_set(): break
-                    run_cycle(b_num, args.profile)
-                    clean_all_pins()
-                    time.sleep(0.5)
+                print("\n[mode] ONE-SHOT MULTI: Overlapped round-robin testing Sockets 1, 2, and 3 once")
+                run_round_robin(args.profile)
             clean_all_pins()
         # --- CONTINUOUS AUTO BLOCK (Round-Robin ON all the time) ---
         elif not USE_BUTTONS:
             clean_all_pins()
-            print("\n[mode] AUTO: Running continuously with Round-Robin ON all the time.")
+            print("\n[mode] AUTO: Running continuously with Overlapped Round-Robin ON all the time.")
             if args.board:
                 print(f"[mode] Single-socket override: Socket {args.board}")
                 while not stop_event.is_set():
@@ -1559,13 +1920,14 @@ def main():
                         time.sleep(0.1)
                         waited += 0.1
             else:
-                print("[mode] Round-robin testing Sockets 1, 2, and 3 continuously")
+                print("[mode] Overlapped Round-robin testing Sockets 1, 2, and 3 continuously")
                 while not stop_event.is_set():
-                    for b_num in [1, 2, 3]:
-                        if stop_event.is_set(): break
-                        run_cycle(b_num, args.profile)
-                        clean_all_pins()
-                        time.sleep(1.0) # Brief pause before testing the next board
+                    run_round_robin(args.profile)
+                    clean_all_pins()
+                    waited = 0.0
+                    while waited < 1.0 and not stop_event.is_set():
+                        time.sleep(0.1)
+                        waited += 0.1
         # --------------------------------
         # --------------------------------
         
