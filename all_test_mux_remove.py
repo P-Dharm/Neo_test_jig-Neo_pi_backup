@@ -101,6 +101,39 @@ except ImportError as e:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  SOCKET STATUS LED GPIO PIN CONFIGURATION (BCM GPIO NUMBERS)
+#  Allocate 2 GPIO pins per socket: 1 Green LED and 1 Red LED (Total 6 pins).
+#  Replace None with your desired BCM GPIO pin numbers (e.g., 5, 6, 12, etc.).
+#
+#  LED Behaviors:
+#    - RED BLINK   : Detection error or empty socket
+#    - GREEN BLINK : Process is ON / testing is happening (retry is also Green Blink)
+#    - RED SOLID   : Complete process failed (Remove chip and re-insert)
+#    - GREEN SOLID : Pass (Change the chip)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# --- Socket 1 Status LEDs ---
+SOCKET_1_LED_GREEN = 25  # [INSERT GPIO PIN] Socket 1 Green LED (Testing: Blink | Pass: Solid)
+SOCKET_1_LED_RED   = 24  # [INSERT GPIO PIN] Socket 1 Red LED   (Empty/Error: Blink | Fail: Solid)
+
+# --- Socket 2 Status LEDs ---
+SOCKET_2_LED_GREEN = 22  # [INSERT GPIO PIN] Socket 2 Green LED (Testing: Blink | Pass: Solid)
+SOCKET_2_LED_RED   = 23  # [INSERT GPIO PIN] Socket 2 Red LED   (Empty/Error: Blink | Fail: Solid)
+
+# --- Socket 3 Status LEDs ---
+SOCKET_3_LED_GREEN = 4  # [INSERT GPIO PIN] Socket 3 Green LED (Testing: Blink | Pass: Solid)
+SOCKET_3_LED_RED   = 17  # [INSERT GPIO PIN] Socket 3 Red LED   (Empty/Error: Blink | Fail: Solid)
+
+# ── LED Hardware Polarity & Timing Configuration ──────────────────────────────
+# True  = Active-High : GPIO HIGH turns ON LED (Common Cathode / resistor to GND)
+# False = Active-Low  : GPIO LOW turns ON LED (Common Anode / resistor to 3.3V)
+LED_ACTIVE_HIGH = False
+
+# 0.5 Hz Blink Rate: 1.0s ON, 1.0s OFF (Total 2.0s period)
+LED_BLINK_INTERVAL_S = 1.0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  CONFIG
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -154,10 +187,138 @@ _state_lock = threading.Lock()
 _measuring_active = threading.Event()
 
 socket_state = {
-    1: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False, "already_passed": False},
-    2: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False, "already_passed": False},
-    3: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False, "already_passed": False},
+    1: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False, "already_passed": False, "test_failed": False},
+    2: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False, "already_passed": False, "test_failed": False},
+    3: {"mac": None, "raw_mac": None, "test_flashed": False, "in_queue": False, "is_testing": False, "flash_retry_count": 0, "flash_permanently_failed": False, "already_passed": False, "test_failed": False},
 }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SOCKET LED CONTROLLER (THREAD-SAFE BACKGROUND BLINK & STATUS CONTROLLER)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class SocketLEDController:
+    """Controls the 6 status LEDs (Green & Red for 3 sockets) in a background thread.
+
+    Supported Socket States:
+      - 'RED_BLINK'   : Detection error or empty socket (0.5 Hz: 1.0s ON, 1.0s OFF)
+      - 'GREEN_BLINK' : Process is ON / testing or retry happening (0.5 Hz)
+      - 'RED_SOLID'   : Complete process failed (Remove chip and re-insert)
+      - 'GREEN_SOLID' : Pass (Change the chip)
+      - 'OFF'         : Both LEDs OFF (Cleanup / stopped)
+    """
+
+    def __init__(self, blink_interval=1.0):
+        self.blink_interval = blink_interval
+        self._states = {1: "OFF", 2: "OFF", 3: "OFF"}
+        self._physical_pins = {}
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread = None
+        self._warned_unconfigured = False
+
+    def get_pins_for_socket(self, socket_num):
+        if socket_num == 1:
+            return {"green": SOCKET_1_LED_GREEN, "red": SOCKET_1_LED_RED}
+        elif socket_num == 2:
+            return {"green": SOCKET_2_LED_GREEN, "red": SOCKET_2_LED_RED}
+        elif socket_num == 3:
+            return {"green": SOCKET_3_LED_GREEN, "red": SOCKET_3_LED_RED}
+        return {"green": None, "red": None}
+
+    def start(self):
+        # Notify once if any socket LED pin is not yet configured
+        unconfigured = []
+        for s in [1, 2, 3]:
+            pins = self.get_pins_for_socket(s)
+            if pins["green"] is None or pins["red"] is None:
+                unconfigured.append(s)
+        if unconfigured and not self._warned_unconfigured:
+            print(f"[led] Note: LED GPIO pins not fully defined for Sockets {unconfigured} (set to None). "
+                  f"Physical toggles for unconfigured pins will be skipped.")
+            self._warned_unconfigured = True
+
+        with self._lock:
+            if self._thread is None or not self._thread.is_alive():
+                self._stop_event.clear()
+                self._thread = threading.Thread(target=self._run_loop, name="socket_led_controller", daemon=True)
+                self._thread.start()
+
+    def set_state(self, socket_num, state):
+        if socket_num not in [1, 2, 3]:
+            return
+        with self._lock:
+            if self._states.get(socket_num) != state:
+                self._states[socket_num] = state
+                self._apply_outputs(blink_phase=True)
+
+    def get_state(self, socket_num):
+        with self._lock:
+            return self._states.get(socket_num, "OFF")
+
+    def set_all_off(self):
+        with self._lock:
+            for s in [1, 2, 3]:
+                self._states[s] = "OFF"
+            self._apply_outputs(blink_phase=False)
+
+    def stop(self):
+        self._stop_event.set()
+        self.set_all_off()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=1.0)
+
+    def _drive_pin(self, pin, should_be_on):
+        if pin is None:
+            return
+        current = self._physical_pins.get(pin)
+        if current == should_be_on:
+            return
+        self._physical_pins[pin] = should_be_on
+        hw_high = should_be_on if LED_ACTIVE_HIGH else not should_be_on
+        try:
+            subprocess.run(["pinctrl", "set", str(pin), "op", "dh" if hw_high else "dl"],
+                           capture_output=True, timeout=1.0)
+        except Exception:
+            pass
+
+    def _apply_outputs(self, blink_phase):
+        for sock in [1, 2, 3]:
+            pins = self.get_pins_for_socket(sock)
+            g_pin = pins["green"]
+            r_pin = pins["red"]
+            st = self._states.get(sock, "OFF")
+
+            if st in ("RED_BLINK", "EMPTY_OR_ERROR"):
+                self._drive_pin(g_pin, False)
+                self._drive_pin(r_pin, blink_phase)
+            elif st in ("GREEN_BLINK", "TESTING"):
+                self._drive_pin(g_pin, blink_phase)
+                self._drive_pin(r_pin, False)
+            elif st in ("RED_SOLID", "FAILED"):
+                self._drive_pin(g_pin, False)
+                self._drive_pin(r_pin, True)
+            elif st in ("GREEN_SOLID", "PASSED"):
+                self._drive_pin(g_pin, True)
+                self._drive_pin(r_pin, False)
+            elif st == "OFF":
+                self._drive_pin(g_pin, False)
+                self._drive_pin(r_pin, False)
+
+    def _run_loop(self):
+        blink_phase = True
+        last_toggle = time.monotonic()
+        while not self._stop_event.is_set():
+            now = time.monotonic()
+            if now - last_toggle >= self.blink_interval:
+                blink_phase = not blink_phase
+                last_toggle = now
+                with self._lock:
+                    self._apply_outputs(blink_phase)
+            time.sleep(0.05)
+
+
+led_controller = SocketLEDController(blink_interval=LED_BLINK_INTERVAL_S)
 
 test_firmware_flash_b1 = False
 FICR_b1 = None
@@ -212,9 +373,12 @@ def handle_flash_failure(board_num, err):
         mac = socket_state[board_num]["mac"]
         if cnt < 3:
             print(f"[flash-retry] Board {board_num} ({mac}) flash failed (attempt {cnt}/3). Will retry on next chance: {err}")
+            led_controller.set_state(board_num, "GREEN_BLINK")
         else:
             print(f"[flash-retry] Board {board_num} ({mac}) flash failed 3 times! Recording FAIL to DB: {err}")
             socket_state[board_num]["flash_permanently_failed"] = True
+            socket_state[board_num]["test_failed"] = True
+            led_controller.set_state(board_num, "RED_SOLID")
             pin_set(PIN_PWR[board_num], False)
             record = blank_record()
             record["mac"] = mac or f"UNKNOWN_B{board_num}"
@@ -361,11 +525,13 @@ def route_hardware(board_num):
     set_board_routing(board_num)
     isolate_board_power(board_num)
 
-def clean_all_pins():
+def clean_all_pins(include_leds=False):
     """Turn OFF all board power outputs and reset routing GPIOs to LOW."""
     power_all_boards(False)
     pin_set(11, False)
     pin_set(22, False)
+    if include_leds:
+        led_controller.set_all_off()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1395,6 +1561,9 @@ def run_cycle(board_num, profile):
     print(f"  NEO CYCLE STARTING: BOARD {board_num}")
     print("=" * 62)
 
+    led_controller.start()
+    led_controller.set_state(board_num, "RED_BLINK")
+
     record = blank_record()
     route_hardware(board_num)
 
@@ -1412,6 +1581,7 @@ def run_cycle(board_num, profile):
 
     if not mac:
         print(f"[detect] no module on socket {board_num}: {error}")
+        led_controller.set_state(board_num, "RED_BLINK")
         clean_all_pins()
         return False
 
@@ -1422,12 +1592,17 @@ def run_cycle(board_num, profile):
     # 2. Skip Check via Database
     if jig_db.check_mac_passed(mac) == "PASS" or (raw_mac and jig_db.check_mac_passed(raw_mac) == "PASS"):
         print(f"[skip] Socket {board_num}: MAC {mac} is already passed in database, skipping test.")
+        socket_state[board_num]["already_passed"] = True
+        led_controller.set_state(board_num, "GREEN_SOLID")
         clean_all_pins()
         return True
 
     # 3. Flash Test Firmware & Power Cycle
+    led_controller.set_state(board_num, "GREEN_BLINK")
     ok, message = flash_hex(board_num, TEST_HEX, "test")
     if not ok:
+        socket_state[board_num]["test_failed"] = True
+        led_controller.set_state(board_num, "RED_SOLID")
         finish(record, message)
         return True
     print("[flash] test firmware verified. Power-cycling module...")
@@ -1439,12 +1614,16 @@ def run_cycle(board_num, profile):
 
     # 4 & 5. RSSI & Advanced Component Tests
     if not EXTERNAL_TESTS_OK:
+        socket_state[board_num]["test_failed"] = True
+        led_controller.set_state(board_num, "RED_SOLID")
         finish(record, "Missing mic_test.py or mic_qc.py dependencies.")
         return True
         
     try:
         bench = Bench(board_num, profile)
     except Exception as error:
+        socket_state[board_num]["test_failed"] = True
+        led_controller.set_state(board_num, "RED_SOLID")
         finish(record, f"ADC initialization fault: {error}")
         return True
 
@@ -1453,12 +1632,16 @@ def run_cycle(board_num, profile):
         rssi, message = scan_rssi(BLE_NAME, mac)
         if message:
             record["ble"] = "FAIL"
+            socket_state[board_num]["test_failed"] = True
+            led_controller.set_state(board_num, "RED_SOLID")
             finish(record, f"RSSI: {message}")
             return True
             
         record["rssi_dbm"] = rssi
         print(f"[rssi] {rssi} dBm")
         if not check_window(rssi, RSSI_LIMITS):
+            socket_state[board_num]["test_failed"] = True
+            led_controller.set_state(board_num, "RED_SOLID")
             finish(record, f"RSSI {rssi} dBm outside {RSSI_LIMITS}")
             return True
 
@@ -1468,6 +1651,8 @@ def run_cycle(board_num, profile):
         message = f"BLE stage fault: {error}"
         
     if message:
+        socket_state[board_num]["test_failed"] = True
+        led_controller.set_state(board_num, "RED_SOLID")
         finish(record, message)
         return True
 
@@ -1475,6 +1660,8 @@ def run_cycle(board_num, profile):
     ok, message = flash_hex(board_num, CLIENT_HEX, "client")
     if not ok:
         record["client_firmware"] = "FAIL"
+        socket_state[board_num]["test_failed"] = True
+        led_controller.set_state(board_num, "RED_SOLID")
         finish(record, message)
         return True
         
@@ -1482,6 +1669,9 @@ def run_cycle(board_num, profile):
     print("[flash] client firmware verified")
 
     record["result"] = "PASS"
+    socket_state[board_num]["already_passed"] = True
+    socket_state[board_num]["test_failed"] = False
+    led_controller.set_state(board_num, "GREEN_SOLID")
     finish(record, "")
     return True
 
@@ -1535,12 +1725,14 @@ def start_background_flash_test(board_num):
 
         def _worker():
             print(f"[flash-bg] -> Starting test firmware flash for Board {board_num}...")
+            led_controller.set_state(board_num, "GREEN_BLINK")
             ok, err = flash_hex(board_num, TEST_HEX, "test")
             info["success"] = ok
             info["error"] = err
             if ok:
                 set_board_test_flashed(board_num, True)
                 socket_state[board_num]["flash_retry_count"] = 0
+                led_controller.set_state(board_num, "GREEN_BLINK")
                 print(f"[flash-bg] <- Board {board_num} test firmware FLASHED successfully! Rebooting board...")
                 pin_set(PIN_PWR[board_num], False)
                 time.sleep(0.3)
@@ -1580,6 +1772,7 @@ def start_background_flash_client(board_num, record):
 
         def _worker():
             print(f"[flash-bg] -> Starting CLIENT firmware flash for Board {board_num}...")
+            led_controller.set_state(board_num, "GREEN_BLINK")
             ok, err = flash_hex(board_num, CLIENT_HEX, "client")
             info["success"] = ok
             info["error"] = err
@@ -1587,11 +1780,16 @@ def start_background_flash_client(board_num, record):
                 record["client_firmware"] = "PASS"
                 record["result"] = "PASS"
                 set_board_test_flashed(board_num, False)
+                socket_state[board_num]["already_passed"] = True
+                socket_state[board_num]["test_failed"] = False
+                led_controller.set_state(board_num, "GREEN_SOLID")
                 print(f"[flash-bg] <- Board {board_num} CLIENT firmware FLASHED successfully! [PASS]")
                 finish(record, "", cleanup=False)
             else:
                 record["client_firmware"] = "FAIL"
                 record["result"] = "FAIL"
+                socket_state[board_num]["test_failed"] = True
+                led_controller.set_state(board_num, "RED_SOLID")
                 print(f"[flash-bg] <- Board {board_num} CLIENT firmware flash FAILED: {err} [FAIL]")
                 finish(record, err, cleanup=False)
             # Turn power OFF to this board now that client flashing is done
@@ -1654,8 +1852,8 @@ def detect_and_flash_untested_boards(batch_time=None):
             if existing and existing["thread"].is_alive():
                 continue
 
-        # If permanently failed, check if board was removed or changed
-        if socket_state[b]["flash_permanently_failed"]:
+        # If permanently failed or test failed, check if board was removed or changed
+        if socket_state[b]["flash_permanently_failed"] or socket_state[b].get("test_failed"):
             pin_set(PIN_PWR[b], True)
             time.sleep(0.05)
             mac, raw_mac, err = read_ficr_mac(b)
@@ -1666,13 +1864,40 @@ def detect_and_flash_untested_boards(batch_time=None):
                 socket_state[b]["test_flashed"] = False
                 socket_state[b]["flash_retry_count"] = 0
                 socket_state[b]["flash_permanently_failed"] = False
+                socket_state[b]["test_failed"] = False
                 socket_state[b]["in_queue"] = False
                 socket_state[b]["already_passed"] = False
                 if not mac:
                     pin_set(PIN_PWR[b], False)
+                    led_controller.set_state(b, "RED_BLINK")
                     continue
             else:
                 pin_set(PIN_PWR[b], False)
+                led_controller.set_state(b, "RED_SOLID")
+                continue
+
+        # If already passed, check if board was removed or changed
+        if socket_state[b].get("already_passed"):
+            pin_set(PIN_PWR[b], True)
+            time.sleep(0.05)
+            mac, raw_mac, err = read_ficr_mac(b)
+            if not mac or mac != socket_state[b]["mac"]:
+                print(f"[detect-all] Socket {b} previously passed board removed/replaced. Resetting socket.")
+                socket_state[b]["mac"] = mac
+                socket_state[b]["raw_mac"] = raw_mac
+                socket_state[b]["test_flashed"] = False
+                socket_state[b]["flash_retry_count"] = 0
+                socket_state[b]["flash_permanently_failed"] = False
+                socket_state[b]["test_failed"] = False
+                socket_state[b]["in_queue"] = False
+                socket_state[b]["already_passed"] = False
+                if not mac:
+                    pin_set(PIN_PWR[b], False)
+                    led_controller.set_state(b, "RED_BLINK")
+                    continue
+            else:
+                pin_set(PIN_PWR[b], False)
+                led_controller.set_state(b, "GREEN_SOLID")
                 continue
 
         # Turn ON socket power to probe SWD / FICR
@@ -1689,9 +1914,11 @@ def detect_and_flash_untested_boards(batch_time=None):
             set_board_test_flashed(b, False)
             socket_state[b]["flash_retry_count"] = 0
             socket_state[b]["flash_permanently_failed"] = False
+            socket_state[b]["test_failed"] = False
             socket_state[b]["in_queue"] = False
             socket_state[b]["already_passed"] = False
             pin_set(PIN_PWR[b], False)
+            led_controller.set_state(b, "RED_BLINK")
             continue
 
         if mac != old_ficr:
@@ -1701,6 +1928,7 @@ def detect_and_flash_untested_boards(batch_time=None):
             set_board_test_flashed(b, False)
             socket_state[b]["flash_retry_count"] = 0
             socket_state[b]["flash_permanently_failed"] = False
+            socket_state[b]["test_failed"] = False
             socket_state[b]["in_queue"] = False
             socket_state[b]["already_passed"] = False
         else:
@@ -1711,8 +1939,10 @@ def detect_and_flash_untested_boards(batch_time=None):
                 socket_state[b]["already_passed"] = True
                 print(f"[skip] Socket {b}: MAC {mac} is already passed in database, skipping test.")
             pin_set(PIN_PWR[b], False)
+            led_controller.set_state(b, "GREEN_SOLID")
             continue
 
+        led_controller.set_state(b, "GREEN_BLINK")
         if not get_board_test_flashed(b):
             print(f"[detect-all] Socket {b} ({mac}) needs test firmware, launching background flash...")
             start_background_flash_test(b)
@@ -1738,11 +1968,16 @@ def run_board_stage(board_num, profile):
             socket_state[board_num]["raw_mac"] = raw_mac
         else:
             print(f"[board {board_num}] No module detected in socket {board_num}. Skipping.")
+            led_controller.set_state(board_num, "RED_BLINK")
             return
 
     if jig_db.check_mac_passed(mac) == "PASS" or (raw_mac and jig_db.check_mac_passed(raw_mac) == "PASS"):
         print(f"[skip] Socket {board_num}: MAC {mac} is already passed in database, skipping test.")
+        socket_state[board_num]["already_passed"] = True
+        led_controller.set_state(board_num, "GREEN_SOLID")
         return
+
+    led_controller.set_state(board_num, "GREEN_BLINK")
 
     # Wait for test firmware flash if actively flashing
     wait_for_board_flash(board_num)
@@ -1782,12 +2017,16 @@ def run_board_stage(board_num, profile):
     record["ficr_mac"] = mac
 
     if not EXTERNAL_TESTS_OK:
+        socket_state[board_num]["test_failed"] = True
+        led_controller.set_state(board_num, "RED_SOLID")
         finish(record, "Missing mic_test.py or mic_qc.py dependencies.", cleanup=False)
         return
 
     try:
         bench = Bench(board_num, profile)
     except Exception as error:
+        socket_state[board_num]["test_failed"] = True
+        led_controller.set_state(board_num, "RED_SOLID")
         finish(record, f"ADC initialization fault: {error}", cleanup=False)
         return
 
@@ -1795,11 +2034,15 @@ def run_board_stage(board_num, profile):
         rssi, message = scan_rssi(BLE_NAME, mac)
         if message:
             record["ble"] = "FAIL"
+            socket_state[board_num]["test_failed"] = True
+            led_controller.set_state(board_num, "RED_SOLID")
             finish(record, f"RSSI: {message}", cleanup=False)
             return
         record["rssi_dbm"] = rssi
         print(f"[rssi] {rssi} dBm")
         if not check_window(rssi, RSSI_LIMITS):
+            socket_state[board_num]["test_failed"] = True
+            led_controller.set_state(board_num, "RED_SOLID")
             finish(record, f"RSSI {rssi} dBm outside {RSSI_LIMITS}", cleanup=False)
             return
 
@@ -1821,6 +2064,8 @@ def run_board_stage(board_num, profile):
         _measuring_active.clear()
 
     if message:
+        socket_state[board_num]["test_failed"] = True
+        led_controller.set_state(board_num, "RED_SOLID")
         finish(record, message, cleanup=False)
         pin_set(PIN_PWR[board_num], False)
         set_board_test_flashed(board_num, False)
@@ -1828,6 +2073,7 @@ def run_board_stage(board_num, profile):
 
     # All functional and power tests passed!
     print(f"[board {board_num}] All tests passed! Starting client firmware flash in background...")
+    led_controller.set_state(board_num, "GREEN_BLINK")
     start_background_flash_client(board_num, record)
 
 def run_fcfs_stream(profile, once=False):
@@ -1839,6 +2085,11 @@ def run_fcfs_stream(profile, once=False):
     print(f"  NEO FCFS {'ONE-SHOT' if once else 'CONTINUOUS'} STREAM STARTING")
     print("=" * 62)
     print_tracking_state()
+
+    # Start LED controller & initialize all sockets to RED_BLINK (detection/empty state)
+    led_controller.start()
+    for b in [1, 2, 3]:
+        led_controller.set_state(b, "RED_BLINK")
 
     # Initial detection pass
     power_all_boards(True)
@@ -2118,7 +2369,8 @@ def main():
             _restore_hci_up(HCI_DEVICE_INDEX)
         # Do not clean up pins if we are in manual diagnostic mode
         if not (args.current or args.voltage):
-            clean_all_pins()
+            clean_all_pins(include_leds=True)
+        led_controller.stop()
         jig_db.stop_sync_worker()
         print("[quit] done")
     return 0
