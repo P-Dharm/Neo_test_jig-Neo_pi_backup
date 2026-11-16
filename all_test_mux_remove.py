@@ -113,8 +113,8 @@ except ImportError as e:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # --- Socket 1 Status LEDs ---
-SOCKET_1_LED_GREEN = 25  # [INSERT GPIO PIN] Socket 1 Green LED (Testing: Blink | Pass: Solid)
-SOCKET_1_LED_RED   = 24  # [INSERT GPIO PIN] Socket 1 Red LED   (Empty/Error: Blink | Fail: Solid)
+SOCKET_1_LED_GREEN = 24  # [INSERT GPIO PIN] Socket 1 Green LED (Testing: Blink | Pass: Solid)
+SOCKET_1_LED_RED   = 25  # [INSERT GPIO PIN] Socket 1 Red LED   (Empty/Error: Blink | Fail: Solid)
 
 # --- Socket 2 Status LEDs ---
 SOCKET_2_LED_GREEN = 22  # [INSERT GPIO PIN] Socket 2 Green LED (Testing: Blink | Pass: Solid)
