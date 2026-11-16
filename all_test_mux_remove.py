@@ -414,20 +414,12 @@ AMPLITUDE = 0.35
 STIMULUS_LEAD = 0.35
 ALSA_DEVICE = "plughw:CARD=sndrpihifiberry,DEV=0"
 
-# ── Pins & Hardware Routing ────────────────────────────────────────────────
+# ── Pins & Power ───────────────────────────────────────────────────────────
 PIN_START = 18
 PIN_STOP = 23
 PIN_MODE_SWITCH = None  # Hardware switch not populated; Round-Robin is ON all the time
 
 PIN_PWR = {1: 13, 2: 27, 3: 26}
-
-# GPIO 11 and GPIO 22 routing states for each selected board.
-# Values: True = HIGH, False = LOW.
-BOARD_ROUTE = {
-    1: {11: False, 22: False},
-    2: {11: True,  22: False},
-    3: {11: False, 22: True},
-}
 
 USE_BUTTONS = False  # Set to True to use physical Start/Stop pins, False to run automatically
 
@@ -458,7 +450,7 @@ VERBOSE = False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  GPIO & ROUTING
+#  GPIO & BOARD POWER
 # ══════════════════════════════════════════════════════════════════════════════
 
 def pin_set(gpio, high):
@@ -504,32 +496,13 @@ def isolate_board_power(board_num):
     time.sleep(0.05)
     print(f"[gpio] Board {board_num} power ISOLATED: GPIO{target_pin}=HIGH, other boards=LOW")
 
-def set_board_routing(board_num):
-    """Configure GPIO 11 and GPIO 22 routing for the selected board without modifying board power lines."""
-    if board_num not in BOARD_ROUTE:
-        raise ValueError(f"Invalid board number: {board_num}")
-    for gpio, state in BOARD_ROUTE[board_num].items():
-        pin_set(gpio, state)
-    time.sleep(0.05)
-    print(
-        f"[gpio] Board {board_num} routed | "
-        f"GPIO11={'HIGH' if BOARD_ROUTE[board_num][11] else 'LOW'} | "
-        f"GPIO22={'HIGH' if BOARD_ROUTE[board_num][22] else 'LOW'}"
-    )
-
 def route_hardware(board_num):
-    """Configure board-selection routing, then power ON only that board."""
-    if board_num not in PIN_PWR:
-        raise ValueError(f"Invalid board number: {board_num}")
-
-    set_board_routing(board_num)
+    """Power ON only the selected board (multiplexer removed)."""
     isolate_board_power(board_num)
 
 def clean_all_pins(include_leds=False):
-    """Turn OFF all board power outputs and reset routing GPIOs to LOW."""
+    """Turn OFF all board power outputs."""
     power_all_boards(False)
-    pin_set(11, False)
-    pin_set(22, False)
     if include_leds:
         led_controller.set_all_off()
 
@@ -1243,8 +1216,8 @@ class Bench:
         self.report.quietly(lambda: self.chip.select_range(self.current_module.RANGE_LOW_RS))
 
     def measure(self, repeats, range_name=None):
-        # Board routing and power selection are handled once by route_hardware()
-        # at the beginning of run_cycle(); do not change GPIOs during measurement.
+        # Board power isolation is handled once at the beginning of the test stage;
+        # do not change GPIOs during measurement.
         started = time.monotonic()
         readings = []
         for _ in range(max(1, repeats)):
@@ -2008,9 +1981,6 @@ def run_board_stage(board_num, profile):
     time.sleep(0.3)
     pin_set(PIN_PWR[board_num], True)
     time.sleep(POST_FLASH_REBOOT_S)
-
-    # 3. Route hardware to this board
-    set_board_routing(board_num)
 
     record = blank_record()
     record["mac"] = mac
