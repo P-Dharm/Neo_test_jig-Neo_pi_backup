@@ -127,10 +127,10 @@ SOCKET_3_LED_RED   = 17  # [INSERT GPIO PIN] Socket 3 Red LED   (Empty/Error: Bl
 # ── LED Hardware Polarity & Timing Configuration ──────────────────────────────
 # True  = Active-High : GPIO HIGH turns ON LED (Common Cathode / resistor to GND)
 # False = Active-Low  : GPIO LOW turns ON LED (Common Anode / resistor to 3.3V)
-LED_ACTIVE_HIGH = False
+LED_ACTIVE_HIGH = True
 
 # 0.5 Hz Blink Rate: 1.0s ON, 1.0s OFF (Total 2.0s period)
-LED_BLINK_INTERVAL_S = 1.0
+LED_BLINK_INTERVAL_S = 0.5
 
 
 # ══════════════════════════════════════════════════════════════════════════════
