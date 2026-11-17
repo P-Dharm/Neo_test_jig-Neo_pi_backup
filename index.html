@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Production Test Jig Monitor</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-branding">
+        <div class="pulse-indicator" id="syncStatusIndicator" title="Live Sync Active"></div>
+        <div>
+          <h1>Production Test Jig Monitor</h1>
+          <p class="subtitle">Live station metrics & automated quality verification</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="sync-badge" id="refreshTimerBadge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span id="countdownText">Auto-refresh: 60s</span>
+        </div>
+        <button id="btnRefresh" class="btn btn-secondary" title="Manually fetch latest data">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+          <span>Refresh</span>
+        </button>
+        <button id="btnDownloadCsv" class="btn btn-secondary" title="Download all records as CSV file">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Download CSV</span>
+        </button>
+        <button id="btnEmailCsv" class="btn btn-primary" title="Email latest data to authorized engineers">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+            <polyline points="22,6 12,13 2,6"></polyline>
+          </svg>
+          <span>Email data in CSV</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Overall Summary Section (Total Tested, Total Success, Total Failure) -->
+    <section class="summary-section">
+      <div class="summary-card total">
+        <div class="card-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </div>
+        <div class="card-content">
+          <span class="card-label">Total Tested</span>
+          <span class="card-value" id="overallTotal">-</span>
+        </div>
+      </div>
+
+      <div class="summary-card success">
+        <div class="card-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+        </div>
+        <div class="card-content">
+          <span class="card-label">Total Success</span>
+          <span class="card-value" id="overallSuccess">-</span>
+        </div>
+      </div>
+
+      <div class="summary-card failure">
+        <div class="card-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+          </svg>
+        </div>
+        <div class="card-content">
+          <span class="card-label">Total Failure</span>
+          <span class="card-value" id="overallFailure">-</span>
+        </div>
+      </div>
+
+      <div class="summary-card yield">
+        <div class="card-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+        </div>
+        <div class="card-content">
+          <span class="card-label">Overall Yield</span>
+          <span class="card-value" id="overallYield">-</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Top Heading & 3 Station Containers (Jig 1, Jig 2, Jig 3) -->
+    <section class="jigs-section">
+      <div class="section-title-wrap">
+        <h2>Station Performance Containers</h2>
+        <span class="last-sync" id="lastUpdatedLabel">Last updated: --:--:--</span>
+      </div>
+
+      <div class="jigs-grid">
+        <!-- Container Jig 1 -->
+        <div class="jig-container" id="containerJig1">
+          <div class="jig-header">
+            <div class="jig-title">
+              <span class="jig-badge">Station 1</span>
+              <h3>Jig 1</h3>
+            </div>
+            <span class="jig-yield" id="jig1Yield">-% Yield</span>
+          </div>
+          <div class="jig-stats">
+            <div class="jig-stat-row">
+              <span class="stat-name">Total Count</span>
+              <span class="stat-num" id="jig1Total">0</span>
+            </div>
+            <div class="jig-stat-row stat-success">
+              <span class="stat-name">Success</span>
+              <span class="stat-num" id="jig1Success">0</span>
+            </div>
+            <div class="jig-stat-row stat-failure">
+              <span class="stat-name">Failures</span>
+              <span class="stat-num" id="jig1Failure">0</span>
+            </div>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="jig1Bar" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Container Jig 2 -->
+        <div class="jig-container" id="containerJig2">
+          <div class="jig-header">
+            <div class="jig-title">
+              <span class="jig-badge">Station 2</span>
+              <h3>Jig 2</h3>
+            </div>
+            <span class="jig-yield" id="jig2Yield">-% Yield</span>
+          </div>
+          <div class="jig-stats">
+            <div class="jig-stat-row">
+              <span class="stat-name">Total Count</span>
+              <span class="stat-num" id="jig2Total">0</span>
+            </div>
+            <div class="jig-stat-row stat-success">
+              <span class="stat-name">Success</span>
+              <span class="stat-num" id="jig2Success">0</span>
+            </div>
+            <div class="jig-stat-row stat-failure">
+              <span class="stat-name">Failures</span>
+              <span class="stat-num" id="jig2Failure">0</span>
+            </div>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="jig2Bar" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Container Jig 3 -->
+        <div class="jig-container" id="containerJig3">
+          <div class="jig-header">
+            <div class="jig-title">
+              <span class="jig-badge">Station 3</span>
+              <h3>Jig 3</h3>
+            </div>
+            <span class="jig-yield" id="jig3Yield">-% Yield</span>
+          </div>
+          <div class="jig-stats">
+            <div class="jig-stat-row">
+              <span class="stat-name">Total Count</span>
+              <span class="stat-num" id="jig3Total">0</span>
+            </div>
+            <div class="jig-stat-row stat-success">
+              <span class="stat-name">Success</span>
+              <span class="stat-num" id="jig3Success">0</span>
+            </div>
+            <div class="jig-stat-row stat-failure">
+              <span class="stat-name">Failures</span>
+              <span class="stat-num" id="jig3Failure">0</span>
+            </div>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="jig3Bar" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Data Table Section (Latest Data on Top) -->
+    <section class="table-section">
+      <div class="table-header-bar">
+        <div>
+          <h2>Production Test Records</h2>
+          <p class="table-sub">Live records sorted in reverse-chronological order (newest first)</p>
+        </div>
+        <div class="table-filters">
+          <input type="text" id="searchInput" placeholder="Search MAC, ID, result..." class="input-search">
+          <select id="filterJig" class="select-filter">
+            <option value="ALL">All Stations</option>
+            <option value="1">Jig 1</option>
+            <option value="2">Jig 2</option>
+            <option value="3">Jig 3</option>
+          </select>
+          <select id="filterResult" class="select-filter">
+            <option value="ALL">All Results</option>
+            <option value="PASS">PASS Only</option>
+            <option value="FAIL">FAIL Only</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>SR</th>
+              <th>Station</th>
+              <th>Timestamp</th>
+              <th>MAC Address</th>
+              <th>RSSI</th>
+              <th>BLE</th>
+              <th>IMU</th>
+              <th>Mic</th>
+              <th>Active (mA)</th>
+              <th>Sleep (mA)</th>
+              <th>V Charge</th>
+              <th>Result</th>
+              <th>Comments</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr class="loading-row">
+              <td colspan="14">Loading records...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-footer">
+        <span id="recordCountDisplay">Showing 0 records</span>
+      </div>
+    </section>
+  </div>
+
+  <!-- Email Dispatch Modal -->
+  <div class="modal-overlay" id="emailModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+            <polyline points="22,6 12,13 2,6"></polyline>
+          </svg>
+          <h3>Email CSV Report</h3>
+        </div>
+        <button class="modal-close" id="btnCloseEmailModal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="modal-desc">
+          Automated dispatch transfers all test jig records in CSV format via SMTP to the designated engineering team:
+        </p>
+
+        <div class="recipient-box">
+          <span class="recipient-label">Configured Recipients:</span>
+          <div class="recipient-pill">ravil.indiesemic@gmail.com</div>
+          <div class="recipient-pill">dharmveer@indiesemic.com</div>
+        </div>
+
+        <div class="token-config-box">
+          <label for="ghTokenInput" class="config-label">
+            GitHub Personal Access Token (Optional for 1-click trigger):
+          </label>
+          <input type="password" id="ghTokenInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" class="input-text">
+          <small class="help-text">
+            Token is stored only in your browser's local storage and used to trigger the GitHub Actions dispatch workflow.
+          </small>
+        </div>
+
+        <div id="emailStatusBox" class="status-box hidden"></div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btnTriggerAction" class="btn btn-primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+          <span>Trigger Email Dispatch</span>
+        </button>
+        <a id="btnOpenGhActions" href="https://github.com/P-Dharm/Neo_test_jig-Neo_pi_backup/actions/workflows/email_report.yml" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+          Open GitHub Actions
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

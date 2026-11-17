@@ -1,0 +1,33 @@
+name: Email Test Jig CSV Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      trigger_source:
+        description: 'Trigger source'
+        required: false
+        default: 'web_dashboard'
+  repository_dispatch:
+    types: [email_report]
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Execute email script
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+        run: |
+          python3 .github/scripts/send_email_report.py
