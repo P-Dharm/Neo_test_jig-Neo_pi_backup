@@ -6,22 +6,38 @@ This document explains the entire NEO Test Jig project in simple language. It co
 
 ## 1. GPIO Pin Table (Raspberry Pi BCM Pin Numbers)
 
+### 1. LED & Start/Stop GPIO Pins
+
 | GPIO Pin | Use | Comments |
 |----------|-----|----------|
 | **4** | Socket 3 Green LED | Solid ON = Pass, Blinking = Testing |
-| **13** | Board 1 Power Control | HIGH = Board 1 power ON, LOW = power OFF |
-| **14** | Start Button (jig_button.py) | Press to start the test process (Active-High with pull-down) |
-| **15** | Stop Button (jig_button.py) | Press to stop/quit the test process (Active-High with pull-down) |
 | **17** | Socket 3 Red LED | Solid ON = Fail, Blinking = Empty/Error |
-| **18** | Start Button (all_test_mux_remove.py) | Alternative Start pin used in main test script |
 | **22** | Socket 2 Green LED | Solid ON = Pass, Blinking = Testing |
-| **23** | Socket 2 Red LED / Stop Button | Red LED for Socket 2, also used as Stop pin in main test script |
+| **23** | Socket 2 Red LED | Solid ON = Fail, Blinking = Empty/Error |
 | **24** | Socket 1 Green LED | Solid ON = Pass, Blinking = Testing |
 | **25** | Socket 1 Red LED | Solid ON = Fail, Blinking = Empty/Error |
+| **14** | Start Button (`jig_button.py`) | Press to start the test process (Active-High with pull-down) |
+| **15** | Stop Button (`jig_button.py`) | Press to stop/quit the test process (Active-High with pull-down) |
+
+### 2. Other GPIO Pins
+
+| GPIO Pin | Use | Comments |
+|----------|-----|----------|
+| **13** | Board 1 Power Control | HIGH = Board 1 power ON, LOW = power OFF |
 | **26** | Board 3 Power Control | HIGH = Board 3 power ON, LOW = power OFF |
 | **27** | Board 2 Power Control | HIGH = Board 2 power ON, LOW = power OFF |
 
-> **Note:** All GPIO pins use BCM numbering. LEDs are Active-High (GPIO HIGH turns the LED ON). Buttons are Active-High (pressing the button sends 3.3V / HIGH to the GPIO pin).
+### 3. Speaker GPIO Pins
+
+| GPIO Pin | Use | Comments |
+|----------|-----|----------|
+| **18** | Speaker | BCLK of speaker |
+| **19** | Speaker | LRC of speaker |
+| **21** | Speaker | DIN of speaker |
+
+
+
+> **Note:** LEDs are Active-High (GPIO HIGH turns the LED ON). Buttons are Active-High (pressing the button sends 3.3V / HIGH to the GPIO pin).
 
 ---
 
