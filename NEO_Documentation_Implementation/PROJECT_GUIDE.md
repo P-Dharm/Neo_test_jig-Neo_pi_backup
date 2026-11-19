@@ -191,7 +191,7 @@ flowchart TD
 - **Pass condition:** THD and SNR values are within calibrated limits from `limits_mic.json`.
 
 #### Test 8: ACTIVE CURRENT (Streaming Mode Power Consumption)
-- **What it does:** Puts the DUT into active streaming mode with `AT+ACTIVE` (BLE audio notifications enabled). Waits for the current to settle, then measures the board's power consumption using the ADS122C04 ADC and shunt resistor. Also reads the charging voltage (V_charging) from the voltage measurement ADC.
+- **What it does:** Puts the DUT into active streaming mode with `AT+ACTIVE` (BLE audio notifications enabled). Waits for the current to settle, then measures the board's power consumption using the ADS122C04 ADC and shunt resistor.
 - **Pass condition:** Current is between **3.50 mA and 6.50 mA**.
 - **Power isolation:** Before measuring, all other boards are turned OFF so only the target board draws current through the shunt.
 
@@ -204,13 +204,15 @@ flowchart TD
 - **What it does:** Same as the white LED test, but sends `AT+LED=2` to turn on the amber LED.
 - **Pass condition:** Delta is between **2.00 mA and 3.50 mA**.
 
-#### Test 11: SLEEP CURRENT (Deep Sleep Power Consumption)
-- **What it does:** Sends `AT+SLEEP` to put the DUT into deep sleep mode. Stops all BLE audio notifications. Waits for the current to settle (5 seconds in careful mode), then measures the board's power consumption.
-- **Pass condition:** Current is between **0.007 mA (7 µA) and 2.50 mA**.
-- **Extra check:** If current is above 3.0 mA, it suspects the board did not actually enter sleep mode.
+#### Test 11: SLEEP CURRENT & CHARGING VOLTAGE (Deep Sleep Power & Voltage Check)
+- **What it does:** Sends `AT+SLEEP` to put the DUT into deep sleep mode. Stops all BLE audio notifications. Waits for the current to settle (5 seconds in careful mode), then measures the board's deep sleep current consumption and charging voltage (`V_charging`) using the ADS122C04 ADCs.
+- **Pass condition:**
+  - Sleep current is between **0.007 mA (7 µA) and 2.50 mA**.
+  - Charging voltage (`V_charging`) is between **3.80 V and 4.20 V**. The firmware will only pass if the voltage is within this range.
+- **Extra check:** If current is above 3.0 mA, it suspects the board did not actually enter sleep mode. If charging voltage is outside 3.80V – 4.20V (or measurement fails), the test fails and production firmware will not be flashed.
 
 #### Test 12: FLASH CLIENT FIRMWARE
-- **What it does:** If all previous tests passed, the final production firmware is programmed onto the chip using OpenOCD. This is the firmware the chip will run when it ships to the customer.
+- **What it does:** If all previous tests passed (including charging voltage within 3.80V to 4.20V), the final production firmware is programmed onto the chip using OpenOCD. This is the firmware the chip will run when it ships to the customer.
 - **Pass condition:** OpenOCD reports "verified" after programming.
 
 #### Test 13: LOG RESULT
@@ -225,6 +227,7 @@ flowchart TD
 | RSSI (Signal Strength) | -90.0 | -20.0 | dBm |
 | Active Stream Current | 3.50 | 6.50 | mA |
 | Sleep Current | 0.007 | 2.50 | mA |
+| Charging Voltage (V_charging) | 3.80 | 4.20 | V |
 | White LED Delta | 0.20 | 2.20 | mA |
 | Amber LED Delta | 2.00 | 3.50 | mA |
 

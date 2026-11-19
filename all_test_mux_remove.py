@@ -24,7 +24,7 @@ Test Chain
   7. ACTIVE STREAM: Send AT+ACTIVE. Measure current with live audio traffic.
   8. ACTIVE QUIET: Stop notifications. Measure current with radio idle.
   9. LED TEST: Send AT+LED=0, measure. Send AT+LED=1, measure. Check delta.
- 10. SLEEP TEST: Send AT+SLEEP. Measure deep sleep current.
+ 10. SLEEP TEST: Send AT+SLEEP. Measure deep sleep current and charging voltage (3.8V - 4.2V).
  11. FLASH CLIENT FW: If all criteria pass, program final production firmware.
  12. LOG & CLEANUP: Write 23-column row to CSV and Google Sheets. Power off.
 """
@@ -154,10 +154,11 @@ SLEEP_SETTLE_S = 5.0
 LED_SETTLE_S = 1.0
 POST_FLASH_REBOOT_S = 2.0
 
-# Calibrated Limits (mA and dBm)
+# Calibrated Limits (mA, dBm, and V)
 ACTIVE_LIMITS = (3.50, 6.50)
 ACTIVE_QUIET_LIMITS = (1.20, 3.50)
 SLEEP_LIMITS = (0.007, 2.50)
+V_CHARGING_LIMITS = (3.80, 4.20)
 LED_DELTA_LIMITS = (0.20, 2.20)
 AMBER_LED_DELTA_LIMITS = (2.00, 3.5)
 RSSI_LIMITS = (-90.0, -20.0)
@@ -1215,7 +1216,7 @@ class Bench:
     def park(self):
         self.report.quietly(lambda: self.chip.select_range(self.current_module.RANGE_LOW_RS))
 
-    def measure(self, repeats, range_name=None):
+    def measure(self, repeats, range_name=None, measure_voltage=False):
         # Board power isolation is handled once at the beginning of the test stage;
         # do not change GPIOs during measurement.
         started = time.monotonic()
@@ -1242,10 +1243,11 @@ class Bench:
         ground_offset = across_rs if self.shunt_in_ground else 0.0
         
         rails = {}
-        try:
-            rails, _ = self.report.quietly(lambda: self.rails.measure_all(self.rail_channels, ground_offset))
-        except OSError:
-            pass 
+        if measure_voltage:
+            try:
+                rails, _ = self.report.quietly(lambda: self.rails.measure_all(self.rail_channels, ground_offset))
+            except OSError:
+                pass 
         
         self.park()
         
@@ -1258,9 +1260,9 @@ class Bench:
             "rails": rails,
         }
 
-async def measure_async(bench, repeats, range_name=None):
+async def measure_async(bench, repeats, range_name=None, measure_voltage=False):
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, bench.measure, repeats, range_name)
+    return await loop.run_in_executor(None, bench.measure, repeats, range_name, measure_voltage)
 
 def parse_rail_volt(rails, key="V_charging"):
     result = rails.get(key)
@@ -1403,10 +1405,8 @@ async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_m
             if row["current_ma"] < ACTIVE_LIMITS[0]: return f"Active Stream: {row['current_ma']:.4f} mA is too low (minimum {ACTIVE_LIMITS[0]:.2f} mA)."
             
             record["active_stream_ma"] = round(row["current_ma"], 4)
-            record["V_charging"] = parse_rail_volt(row["rails"], "V_charging")
             
             print(f"        Stream {row['current_ma']:.4f} mA (Limits: {ACTIVE_LIMITS[0]:.2f} - {ACTIVE_LIMITS[1]:.2f} mA)")
-            print(f"        V_charging: {record['V_charging']}V")
             if not check_window(row["current_ma"], ACTIVE_LIMITS):
                 return f"Active Stream {row['current_ma']:.4f} mA out of bounds [{ACTIVE_LIMITS[0]:.2f} - {ACTIVE_LIMITS[1]:.2f} mA]"
         except (Exception, asyncio.CancelledError) as e:
@@ -1483,7 +1483,7 @@ async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_m
         except (Exception, asyncio.CancelledError) as e:
             return f"Amber LED Test Error: {e}"
 
-        # 7. SLEEP CURRENT
+        # 7. SLEEP CURRENT & CHARGING VOLTAGE
         print("  [test] sleep mode current...")
         try:
             try:
@@ -1494,19 +1494,23 @@ async def _ble_stage(mac, bench, record, measure_rssi=False, on_before_current_m
             session.capturing = False
             await asyncio.sleep(SLEEP_SETTLE_S)
             
-            row = await measure_async(bench, SLEEP_REPEATS)
+            row = await measure_async(bench, SLEEP_REPEATS, measure_voltage=True)
             if not row["ok"]: return f"Sleep: {row['why']}"
             
             record["sleep_current_ma"] = round(row["current_ma"], 4)
-            if record["V_charging"] == NA:
-                record["V_charging"] = parse_rail_volt(row["rails"], "V_charging")
+            record["V_charging"] = parse_rail_volt(row["rails"], "V_charging")
             
             print(f"        Sleep {row['current_ma']:.4f} mA (Limits: {SLEEP_LIMITS[0]:.4f} - {SLEEP_LIMITS[1]:.4f} mA)")
-            print(f"        V_charging: {record['V_charging']}V")
+            print(f"        V_charging: {record['V_charging']}V (Limits: {V_CHARGING_LIMITS[0]:.2f} - {V_CHARGING_LIMITS[1]:.2f} V)")
             if row["current_ma"] > max(STATE_THRESHOLD_MA, SLEEP_LIMITS[1]):
                 return f"Sleep: {row['current_ma']:.4f} mA looks like active."
             if not check_window(row["current_ma"], SLEEP_LIMITS):
                 return f"Sleep {row['current_ma']:.4f} mA out of bounds [{SLEEP_LIMITS[0]:.4f} - {SLEEP_LIMITS[1]:.4f} mA]"
+            v_val = record["V_charging"]
+            if v_val == NA or not isinstance(v_val, (int, float)):
+                return "Sleep: V_charging measurement failed"
+            if not check_window(v_val, V_CHARGING_LIMITS):
+                return f"Sleep: V_charging {v_val:.4f}V out of bounds [{V_CHARGING_LIMITS[0]:.2f} - {V_CHARGING_LIMITS[1]:.2f} V]"
         except (Exception, asyncio.CancelledError) as e:
             return f"Sleep Test Error: {e}"
 
@@ -2186,7 +2190,7 @@ def watch_buttons(profile, target_board=1):
 
 
 def main():
-    global VERBOSE, ACTIVE_LIMITS, SLEEP_LIMITS
+    global VERBOSE, ACTIVE_LIMITS, SLEEP_LIMITS, V_CHARGING_LIMITS
     parser = argparse.ArgumentParser(description="NEO 3-in-1 automated test jig")
     parser.add_argument("--once", action="store_true", help="run one cycle immediately")
     parser.add_argument("--board", type=int, choices=[1, 2, 3], help="target socket (1, 2, or 3)")
@@ -2197,6 +2201,8 @@ def main():
                         metavar=("LO", "HI"), help="pass window for streaming active current in mA (default: 1.50 6.00)")
     parser.add_argument("--sleep-limits", type=float, nargs=2, default=list(SLEEP_LIMITS),
                         metavar=("LO", "HI"), help="pass window for deep sleep current in mA (default: 0.007 2.50)")
+    parser.add_argument("--voltage-limits", type=float, nargs=2, default=list(V_CHARGING_LIMITS),
+                        metavar=("LO", "HI"), help="pass window for V_charging in V (default: 3.80 4.20)")
     parser.add_argument("--current", action="store_true", help="Only measure default boot current and exit")
     parser.add_argument("--voltage", action="store_true", help="Only measure rail voltages and exit")
     parser.add_argument("--supabase", action="store_true", help="Enable online Supabase sync (default: False)")
@@ -2206,6 +2212,8 @@ def main():
         ACTIVE_LIMITS = tuple(args.active_limits)
     if args.sleep_limits:
         SLEEP_LIMITS = tuple(args.sleep_limits)
+    if args.voltage_limits:
+        V_CHARGING_LIMITS = tuple(args.voltage_limits)
     VERBOSE = args.verbose
     global HCI_DEVICE_INDEX, BLE_ADAPTER, ENABLE_SUPABASE, USE_BUMBLE
     global ACTIVE_SETTLE_S, SLEEP_SETTLE_S, LED_SETTLE_S, POST_FLASH_REBOOT_S
@@ -2254,6 +2262,7 @@ def main():
     print(f"  Profile       : {args.profile.upper()} (Active Settle: {ACTIVE_SETTLE_S:.1f}s, Sleep Settle: {SLEEP_SETTLE_S:.1f}s, LED Settle: {LED_SETTLE_S:.1f}s)")
     print(f"  Active Stream Limits: {ACTIVE_LIMITS[0]:.2f} - {ACTIVE_LIMITS[1]:.2f} mA")
     print(f"  Sleep Current Limits: {SLEEP_LIMITS[0]:.4f} - {SLEEP_LIMITS[1]:.4f} mA")
+    print(f"  V_charging Limits   : {V_CHARGING_LIMITS[0]:.2f} - {V_CHARGING_LIMITS[1]:.2f} V")
     print("=" * 62)
 
     # Initialize database: local SQLite with optional Supabase online sync
@@ -2283,7 +2292,7 @@ def main():
             print(f"\n[power] Manual mode: reading Socket {target_board} without changing GPIOs...")
             
             bench = Bench(target_board, args.profile, manual_power=True)
-            row = asyncio.run(measure_async(bench, 3))
+            row = asyncio.run(measure_async(bench, 3, measure_voltage=args.voltage))
             
             if not row["ok"]:
                 print(f"[power] Measurement failed: {row['why']}")
