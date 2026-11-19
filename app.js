@@ -15,16 +15,7 @@
     API_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpcW5reXV3ZGd5dXpsZ2ZtdG1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NzcyNjEsImV4cCI6MjEwOTQ1MzI2MX0.6aY9E4raqTKfLlmPQyVxijwcfh_yWH-4942SkKcEW-A",
     
     // Auto-refresh cadence (60 seconds)
-    REFRESH_INTERVAL_SECONDS: 60,
-
-    // Hardcoded Notification Recipients
-    EMAIL_RECIPIENTS: ["ravil.indiesemic@gmail.com", "dharmveer@indiesemic.com"],
-
-    // GitHub Actions Workflow Details
-    GITHUB_OWNER: "P-Dharm",
-    GITHUB_REPO: "Neo_test_jig-Neo_pi_backup",
-    WORKFLOW_FILE: "email_report.yml",
-    WORKFLOW_REF: "testing_ravil"
+    REFRESH_INTERVAL_SECONDS: 60
   };
 
   // State Management
@@ -69,14 +60,6 @@
 
   const btnRefresh = document.getElementById('btnRefresh');
   const btnDownloadCsv = document.getElementById('btnDownloadCsv');
-  const btnEmailCsv = document.getElementById('btnEmailCsv');
-
-  // Modal Elements
-  const elEmailModal = document.getElementById('emailModal');
-  const btnCloseEmailModal = document.getElementById('btnCloseEmailModal');
-  const btnTriggerAction = document.getElementById('btnTriggerAction');
-  const elGhTokenInput = document.getElementById('ghTokenInput');
-  const elEmailStatusBox = document.getElementById('emailStatusBox');
 
   // ==============================================================================
   // JIG & RESULT HELPERS
@@ -381,79 +364,6 @@
   }
 
   // ==============================================================================
-  // EMAIL DISPATCH VIA GITHUB ACTIONS
-  // ==============================================================================
-  function openEmailModal() {
-    const savedToken = localStorage.getItem("gh_pat_token") || "";
-    elGhTokenInput.value = savedToken;
-    elEmailStatusBox.className = "status-box hidden";
-    elEmailStatusBox.textContent = "";
-    elEmailModal.classList.add("open");
-  }
-
-  function closeEmailModal() {
-    elEmailModal.classList.remove("open");
-  }
-
-  async function triggerEmailDispatch() {
-    const token = elGhTokenInput.value.trim();
-    if (token) {
-      localStorage.setItem("gh_pat_token", token);
-    }
-
-    if (!token) {
-      elEmailStatusBox.className = "status-box info";
-      elEmailStatusBox.innerHTML = `
-        A GitHub Personal Access Token (PAT) is required to trigger the workflow directly from this dashboard.
-        Alternatively, click <strong>"Open GitHub Actions"</strong> below to run it directly in GitHub.
-      `;
-      return;
-    }
-
-    btnTriggerAction.disabled = true;
-    elEmailStatusBox.className = "status-box info";
-    elEmailStatusBox.textContent = "Triggering GitHub Actions SMTP dispatch workflow...";
-
-    try {
-      const dispatchUrl = `https://api.github.com/repos/${APP_CONFIG.GITHUB_OWNER}/${APP_CONFIG.GITHUB_REPO}/actions/workflows/${APP_CONFIG.WORKFLOW_FILE}/dispatches`;
-
-      const resp = await fetch(dispatchUrl, {
-        method: "POST",
-        headers: {
-          "Accept": "application/vnd.github+json",
-          "Authorization": `Bearer ${token}`,
-          "X-GitHub-Api-Version": "2022-11-28",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          ref: APP_CONFIG.WORKFLOW_REF,
-          inputs: {
-            trigger_source: "web_dashboard"
-          }
-        })
-      });
-
-      if (resp.status === 204) {
-        elEmailStatusBox.className = "status-box success";
-        elEmailStatusBox.innerHTML = `
-          <strong>Workflow triggered successfully!</strong><br>
-          The SMTP service is compiling all CSV records and sending to:<br>
-          • <code>${APP_CONFIG.EMAIL_RECIPIENTS.join("</code><br>• <code>")}</code>
-        `;
-      } else {
-        const errorJson = await resp.json().catch(() => ({}));
-        elEmailStatusBox.className = "status-box error";
-        elEmailStatusBox.textContent = `GitHub Error (${resp.status}): ${errorJson.message || resp.statusText}`;
-      }
-    } catch (err) {
-      elEmailStatusBox.className = "status-box error";
-      elEmailStatusBox.textContent = `Dispatch failed: ${err.message}`;
-    } finally {
-      btnTriggerAction.disabled = false;
-    }
-  }
-
-  // ==============================================================================
   // EVENT LISTENERS & INITIALIZATION
   // ==============================================================================
   function setupEventListeners() {
@@ -462,14 +372,6 @@
     });
 
     btnDownloadCsv.addEventListener('click', downloadCsv);
-    btnEmailCsv.addEventListener('click', openEmailModal);
-    btnCloseEmailModal.addEventListener('click', closeEmailModal);
-
-    elEmailModal.addEventListener('click', (e) => {
-      if (e.target === elEmailModal) closeEmailModal();
-    });
-
-    btnTriggerAction.addEventListener('click', triggerEmailDispatch);
 
     // Filter controls
     elSearchInput.addEventListener('input', renderTable);

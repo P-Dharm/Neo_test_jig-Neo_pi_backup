@@ -32,20 +32,13 @@
           </svg>
           <span>Refresh</span>
         </button>
-        <button id="btnDownloadCsv" class="btn btn-secondary" title="Download all records as CSV file">
+        <button id="btnDownloadCsv" class="btn btn-primary" title="Download all records as CSV file">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
           <span>Download CSV</span>
-        </button>
-        <button id="btnEmailCsv" class="btn btn-primary" title="Email latest data to authorized engineers">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-            <polyline points="22,6 12,13 2,6"></polyline>
-          </svg>
-          <span>Email data in CSV</span>
         </button>
       </div>
     </header>
@@ -258,59 +251,6 @@
         <span id="recordCountDisplay">Showing 0 records</span>
       </div>
     </section>
-  </div>
-
-  <!-- Email Dispatch Modal -->
-  <div class="modal-overlay" id="emailModal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <div class="modal-title-wrap">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-            <polyline points="22,6 12,13 2,6"></polyline>
-          </svg>
-          <h3>Email CSV Report</h3>
-        </div>
-        <button class="modal-close" id="btnCloseEmailModal">&times;</button>
-      </div>
-
-      <div class="modal-body">
-        <p class="modal-desc">
-          Automated dispatch transfers all test jig records in CSV format via SMTP to the designated engineering team:
-        </p>
-
-        <div class="recipient-box">
-          <span class="recipient-label">Configured Recipients:</span>
-          <div class="recipient-pill">ravil.indiesemic@gmail.com</div>
-          <div class="recipient-pill">dharmveer@indiesemic.com</div>
-        </div>
-
-        <div class="token-config-box">
-          <label for="ghTokenInput" class="config-label">
-            GitHub Personal Access Token (Optional for 1-click trigger):
-          </label>
-          <input type="password" id="ghTokenInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" class="input-text">
-          <small class="help-text">
-            Token is stored only in your browser's local storage and used to trigger the GitHub Actions dispatch workflow.
-          </small>
-        </div>
-
-        <div id="emailStatusBox" class="status-box hidden"></div>
-      </div>
-
-      <div class="modal-actions">
-        <button id="btnTriggerAction" class="btn btn-primary">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-          </svg>
-          <span>Trigger Email Dispatch</span>
-        </button>
-        <a id="btnOpenGhActions" href="https://github.com/P-Dharm/Neo_test_jig-Neo_pi_backup/actions/workflows/email_report.yml" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
-          Open GitHub Actions
-        </a>
-      </div>
-    </div>
   </div>
 
   <script src="app.js"></script>
